@@ -317,3 +317,119 @@ class TestEnrichment:
         config = EnrichmentConfig(geoip_enabled=False, asn_enabled=False, threat_intel_enabled=False)
         manager = EnrichmentManager(config)
         assert manager is not None
+
+
+class TestAlerting:
+    """Test alerting modules."""
+
+    def test_threshold_rule_creation(self):
+        """Test threshold rule creation."""
+        from flowsight.alerting.threshold import ThresholdRule, AlertSeverity
+        rule = ThresholdRule(
+            name="test_rule",
+            field="bytes",
+            operator=">",
+            value=1000,
+            severity=AlertSeverity.WARNING,
+        )
+        assert rule.name == "test_rule"
+        assert rule.evaluate(2000) is True
+        assert rule.evaluate(500) is False
+
+    def test_threshold_rule_operators(self):
+        """Test all threshold rule operators."""
+        from flowsight.alerting.threshold import ThresholdRule, AlertSeverity
+        
+        operators_tests = [
+            (">", 1000, 2000, True),
+            (">", 1000, 500, False),
+            ("<", 1000, 500, True),
+            ("<", 1000, 2000, False),
+            (">=", 1000, 1000, True),
+            (">=", 1000, 500, False),
+            ("<=", 1000, 1000, True),
+            ("<=", 1000, 2000, False),
+            ("==", 1000, 1000, True),
+            ("==", 1000, 500, False),
+            ("!=", 1000, 500, True),
+            ("!=", 1000, 1000, False),
+        ]
+        
+        for op, threshold, value, expected in operators_tests:
+            rule = ThresholdRule(
+                name="test",
+                field="bytes",
+                operator=op,
+                value=threshold,
+                severity=AlertSeverity.INFO,
+            )
+            assert rule.evaluate(value) == expected, f"Failed for {op}: {value} vs {threshold}"
+
+    def test_threshold_alert_engine_init(self):
+        """Test threshold alert engine initialization."""
+        from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, AlertSeverity
+        engine = ThresholdAlertEngine()
+        assert engine is not None
+
+    def test_alert_engine_add_rule(self):
+        """Test adding rules to alert engine."""
+        from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, AlertSeverity
+        engine = ThresholdAlertEngine()
+        rule = ThresholdRule(
+            name="test_rule",
+            field="bytes",
+            operator=">",
+            value=1000,
+            severity=AlertSeverity.WARNING,
+        )
+        engine.add_rule(rule)
+        assert len(engine.rules) == 1
+
+    def test_alert_engine_evaluate(self):
+        """Test evaluating flows against rules."""
+        from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, AlertSeverity
+        engine = ThresholdAlertEngine()
+        rule = ThresholdRule(
+            name="high_bytes",
+            field="bytes",
+            operator=">",
+            value=1000,
+            severity=AlertSeverity.WARNING,
+        )
+        engine.add_rule(rule)
+
+        # Flow that should trigger alert
+        flow_trigger = {"bytes": 2000, "src_ip": "192.168.1.1", "dst_ip": "10.0.0.1"}
+        alerts = engine.evaluate_flow(flow_trigger)
+        assert len(alerts) == 1
+        assert alerts[0].rule_name == "high_bytes"
+
+        # Flow that should not trigger
+        flow_no_trigger = {"bytes": 500, "src_ip": "192.168.1.1", "dst_ip": "10.0.0.1"}
+        alerts = engine.evaluate_flow(flow_no_trigger)
+        assert len(alerts) == 0
+
+    def test_alert_manager_init(self):
+        """Test alert manager initialization."""
+        from flowsight.alerting.manager import AlertManager
+        manager = AlertManager()
+        assert manager is not None
+
+    def test_log_handler_init(self):
+        """Test log handler initialization."""
+        from flowsight.alerting.handlers import LogHandler
+        from flowsight.alerting.threshold import AlertSeverity
+        handler = LogHandler(severity_filter=[AlertSeverity.WARNING, AlertSeverity.CRITICAL])
+        assert handler.name == "log"
+        assert AlertSeverity.WARNING in handler.severity_filter
+
+    def test_webhook_handler_init(self):
+        """Test webhook handler initialization."""
+        from flowsight.alerting.handlers import WebhookHandler
+        from flowsight.alerting.threshold import AlertSeverity
+        handler = WebhookHandler(
+            url="https://example.com/webhook",
+            severity_filter=[AlertSeverity.CRITICAL],
+        )
+        assert handler.name == "webhook"
+        assert handler.url == "https://example.com/webhook"
