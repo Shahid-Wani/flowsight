@@ -131,10 +131,14 @@ def main():
     """Main entry point."""
     print(f"FlowSight Daily Commit - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # Check if we're in a git repo
-    if not (REPO_PATH / ".git").exists():
-        print("Error: Not a git repository")
+    # Check if we're in a git repo - use the script's directory
+    repo_path = Path(__file__).parent.parent
+    if not (repo_path / ".git").exists():
+        print(f"Error: Not a git repository at {repo_path}")
         sys.exit(1)
+    
+    # Change to repo directory
+    os.chdir(repo_path)
     
     # Check for existing changes first
     if has_changes():
