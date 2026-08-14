@@ -1,0 +1,82 @@
+# FlowSight Configuration Example
+# Copy this to config.yaml and customize
+
+collector:
+  listen: "0.0.0.0:2055"
+  protocols:
+    - "netflow_v5"
+    - "netflow_v9"
+    - "ipfix"
+    - "sflow"
+  workers: 4
+  buffer_size: 65536
+
+storage:
+  type: "influxdb"
+  url: "http://localhost:8086"
+  org: "flowsight"
+  bucket: "flows"
+  token: "your-influxdb-token"
+  batch_size: 5000
+  flush_interval: 5
+
+enrichment:
+  enabled: true
+  geoip_path: "./data/GeoLite2-City.mmdb"
+  asn_path: "./data/GeoLite2-ASN.mmdb"
+  abuseipdb_key: ""
+  alienvault_otx_key: ""
+  cache_ttl: 3600
+
+detection:
+  threshold:
+    enabled: true
+    rules:
+      - name: "high_bandwidth"
+        field: "bytes"
+        operator: ">"
+        value: 100000000
+        severity: "warning"
+      - name: "many_connections"
+        field: "packets"
+        operator: ">"
+        value: 10000
+        severity: "info"
+  statistical:
+    enabled: true
+    window: "5m"
+    zscore_threshold: 3.0
+    min_samples: 100
+  ml:
+    enabled: false
+    model_path: "./models/isolation_forest.pkl"
+    retrain_interval: "24h"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  jwt_secret: "change-me-in-production-use-strong-random"
+  jwt_algorithm: "HS256"
+  access_token_expire_minutes: 30
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8080"
+  rate_limit: 100
+
+alerting:
+  enabled: true
+  handlers:
+    - type: "log"
+      level: "info"
+    - type: "webhook"
+      url: ""
+      headers: {}
+      template: ""
+
+logging:
+  level: "INFO"
+  format: "json"
+  output: "stdout"
+  file_path: "./logs/flowsight.log"
+  max_bytes: 10485760
+  backup_count: 5

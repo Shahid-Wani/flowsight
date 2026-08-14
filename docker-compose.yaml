@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: flowsight-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=password
+      - DOCKER_INFLUXDB_INIT_ORG=flowsight
+      - DOCKER_INFLUXDB_INIT_BUCKET=flows
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=my-super-secret-admin-token
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+      - influxdb-config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    container_name: flowsight-collector
+    ports:
+      - "2055:2055/udp"
+    environment:
+      - COLLECTOR_LISTEN=0.0.0.0:2055
+      - STORAGE_URL=http://influxdb:8086
+      - STORAGE_ORG=flowsight
+      - STORAGE_BUCKET=flows
+      - STORAGE_TOKEN=my-super-secret-admin-token
+      - LOGGING_LEVEL=INFO
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: flowsight-api
+    ports:
+      - "8000:8000"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - STORAGE_URL=http://influxdb:8086
+      - STORAGE_ORG=flowsight
+      - STORAGE_BUCKET=flows
+      - STORAGE_TOKEN=my-super-secret-admin-token
+      - API_JWT_SECRET=change-me-in-production
+      - LOGGING_LEVEL=INFO
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+
+volumes:
+  influxdb-data:
+  influxdb-config:
