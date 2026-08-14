@@ -433,3 +433,35 @@ class TestAlerting:
         )
         assert handler.name == "webhook"
         assert handler.url == "https://example.com/webhook"
+
+
+class TestDetection:
+    """Test detection modules."""
+
+    def test_statistical_detector_init(self):
+        """Test statistical anomaly detector initialization."""
+        from flowsight.detection.statistical import StatisticalAnomalyDetector
+        detector = StatisticalAnomalyDetector()
+        assert detector is not None
+
+    def test_statistical_detector_add_sample(self):
+        """Test adding samples to statistical detector."""
+        import asyncio
+        from flowsight.detection.statistical import StatisticalAnomalyDetector
+        
+        detector = StatisticalAnomalyDetector(window_size=100, min_samples=5)
+        
+        # Add samples
+        async def test():
+            for i in range(10):
+                await detector.add_sample({"bytes": 1000 + i * 100})
+            stats = detector.get_stats()
+            assert stats["samples_per_field"]["bytes"] == 10
+        
+        asyncio.run(test())
+
+    def test_ml_detector_init(self):
+        """Test ML anomaly detector initialization."""
+        from flowsight.detection.ml import MLAnomalyDetector
+        detector = MLAnomalyDetector()
+        assert detector is not None
