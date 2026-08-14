@@ -288,3 +288,32 @@ class TestLogging:
         from flowsight.logging import LogContext
         with LogContext(key="value"):
             pass  # Should not raise
+
+
+class TestEnrichment:
+    """Test enrichment modules."""
+
+    def test_geoip_enrichment_init(self):
+        """Test GeoIP enrichment initialization."""
+        from flowsight.enrichment.geoip import GeoIPEnrichment
+        enricher = GeoIPEnrichment()
+        assert enricher is not None
+
+    def test_asn_enrichment_init(self):
+        """Test ASN enrichment initialization."""
+        from flowsight.enrichment.asn import ASNEnrichment
+        enricher = ASNEnrichment()
+        assert enricher is not None
+
+    def test_threat_intel_enrichment_init(self):
+        """Test threat intel enrichment initialization."""
+        from flowsight.enrichment.threat_intel import ThreatIntelEnrichment
+        enricher = ThreatIntelEnrichment()
+        assert enricher is not None
+
+    def test_enrichment_manager_init(self):
+        """Test enrichment manager initialization."""
+        from flowsight.enrichment.manager import EnrichmentManager, EnrichmentConfig
+        config = EnrichmentConfig(geoip_enabled=False, asn_enabled=False, threat_intel_enabled=False)
+        manager = EnrichmentManager(config)
+        assert manager is not None
