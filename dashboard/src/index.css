@@ -42,6 +42,18 @@
   }
 }
 
+/* Chart colors for Recharts */
+:root {
+  --chart-color-0: #3b82f6;
+  --chart-color-1: #10b981;
+  --chart-color-2: #f59e0b;
+  --chart-color-3: #ef4444;
+  --chart-color-4: #8b5cf6;
+  --chart-color-5: #ec4899;
+  --chart-color-6: #06b6d4;
+  --chart-color-7: #84cc16;
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;
