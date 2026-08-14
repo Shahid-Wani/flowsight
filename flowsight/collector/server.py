@@ -14,6 +14,7 @@ from typing import Any
 from flowsight import get_logger
 from flowsight.parser.netflow_v5 import parse_netflow_v5
 from flowsight.parser.netflow_v9 import NetFlowV9IPFIXParser
+from flowsight.parser.sflow import SFlowParser
 
 logger = get_logger(__name__)
 
@@ -159,6 +160,19 @@ class NetFlowV9IPFIXHandler(FlowProtocolHandler):
         return self._parser.parse(data, source_ip, source_port)
 
 
+class SFlowHandler(FlowProtocolHandler):
+    """sFlow packet handler."""
+
+    def __init__(self):
+        self._parser = SFlowParser()
+
+    def can_handle(self, data: bytes) -> bool:
+        return self._parser.can_handle(data)
+
+    def parse(self, data: bytes, source_ip: str, source_port: int) -> list[dict[str, Any]]:
+        return self._parser.parse(data, source_ip, source_port)
+
+
 class FlowCollector:
     """Asyncio UDP flow collector."""
 
@@ -181,11 +195,11 @@ class FlowCollector:
         self._init_handlers()
 
     def _init_handlers(self):
-        """Initialize protocol handlers."""
-        self._handlers["netflow_v5"] = NetFlowV5Handler()
-        self._handlers["netflow_v9"] = NetFlowV9IPFIXHandler()
-        self._handlers["ipfix"] = NetFlowV9IPFIXHandler()
-        # sFlow handler will be added in Day 3
+            """Initialize protocol handlers."""
+            self._handlers["netflow_v5"] = NetFlowV5Handler()
+            self._handlers["netflow_v9"] = NetFlowV9IPFIXHandler()
+            self._handlers["ipfix"] = NetFlowV9IPFIXHandler()
+            self._handlers["sflow"] = SFlowHandler()
 
     async def start(self):
         """Start the collector."""
