@@ -8,12 +8,13 @@ Supports YAML config files and environment variables.
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class CollectorConfig(BaseSettings):
     """Flow collector configuration."""
+
     listen: str = "0.0.0.0:2055"
     protocols: list[Literal["netflow_v5", "netflow_v9", "ipfix", "sflow"]] = [
         "netflow_v5",
@@ -27,6 +28,7 @@ class CollectorConfig(BaseSettings):
 
 class StorageConfig(BaseSettings):
     """Storage backend configuration."""
+
     type: Literal["influxdb", "timescaledb"] = "influxdb"
     url: str = "http://localhost:8086"
     org: str = "flowsight"
@@ -38,6 +40,7 @@ class StorageConfig(BaseSettings):
 
 class EnrichmentConfig(BaseSettings):
     """IP enrichment configuration."""
+
     enabled: bool = True
     geoip_path: str = "./data/GeoLite2-City.mmdb"
     asn_path: str = "./data/GeoLite2-ASN.mmdb"
@@ -48,6 +51,7 @@ class EnrichmentConfig(BaseSettings):
 
 class ThresholdRule(BaseSettings):
     """Threshold-based detection rule."""
+
     name: str
     field: str
     operator: Literal[">", "<", ">=", "<=", "==", "!="]
@@ -57,12 +61,14 @@ class ThresholdRule(BaseSettings):
 
 class ThresholdDetectionConfig(BaseSettings):
     """Threshold detection configuration."""
+
     enabled: bool = True
     rules: list[ThresholdRule] = []
 
 
 class StatisticalDetectionConfig(BaseSettings):
     """Statistical anomaly detection configuration."""
+
     enabled: bool = True
     window: str = "5m"
     zscore_threshold: float = 3.0
@@ -71,6 +77,7 @@ class StatisticalDetectionConfig(BaseSettings):
 
 class MLDetectionConfig(BaseSettings):
     """ML-based anomaly detection configuration."""
+
     enabled: bool = False
     model_path: str = "./models/isolation_forest.pkl"
     retrain_interval: str = "24h"
@@ -78,6 +85,7 @@ class MLDetectionConfig(BaseSettings):
 
 class DetectionConfig(BaseSettings):
     """Anomaly detection configuration."""
+
     threshold: ThresholdDetectionConfig = ThresholdDetectionConfig()
     statistical: StatisticalDetectionConfig = StatisticalDetectionConfig()
     ml: MLDetectionConfig = MLDetectionConfig()
@@ -85,6 +93,7 @@ class DetectionConfig(BaseSettings):
 
 class APIConfig(BaseSettings):
     """REST API configuration."""
+
     host: str = "0.0.0.0"
     port: int = 8000
     jwt_secret: str = "change-me-in-production-use-strong-random"
@@ -96,6 +105,7 @@ class APIConfig(BaseSettings):
 
 class AlertHandlerConfig(BaseSettings):
     """Alert handler configuration."""
+
     type: Literal["log", "email", "webhook", "slack", "pagerduty"]
     url: str = ""
     headers: dict[str, str] = {}
@@ -105,14 +115,14 @@ class AlertHandlerConfig(BaseSettings):
 
 class AlertingConfig(BaseSettings):
     """Alerting configuration."""
+
     enabled: bool = True
-    handlers: list[AlertHandlerConfig] = [
-        AlertHandlerConfig(type="log", level="info")
-    ]
+    handlers: list[AlertHandlerConfig] = [AlertHandlerConfig(type="log", level="info")]
 
 
 class LoggingConfig(BaseSettings):
     """Logging configuration."""
+
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     format: Literal["json", "console"] = "json"
     output: Literal["stdout", "stderr", "file"] = "stdout"
@@ -123,11 +133,9 @@ class LoggingConfig(BaseSettings):
 
 class Settings(BaseSettings):
     """Main application settings."""
+
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_nested_delimiter="__",
-        yaml_file="config.yaml",
-        extra="ignore",
+        env_file=".env", env_nested_delimiter="__", yaml_file="config.yaml", extra="ignore"
     )
 
     collector: CollectorConfig = CollectorConfig()
@@ -138,7 +146,16 @@ class Settings(BaseSettings):
     alerting: AlertingConfig = AlertingConfig()
     logging: LoggingConfig = LoggingConfig()
 
-    @field_validator("collector", "storage", "enrichment", "detection", "api", "alerting", "logging", mode="before")
+    @field_validator(
+        "collector",
+        "storage",
+        "enrichment",
+        "detection",
+        "api",
+        "alerting",
+        "logging",
+        mode="before",
+    )
     @classmethod
     def _load_from_yaml(cls, v):
         """Allow nested config to be loaded from YAML."""

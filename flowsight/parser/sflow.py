@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 class SFlowParser:
     """Parser for sFlow packets."""
-    
+
     def parse(self, data: bytes) -> list[dict[str, Any]]:
         """Parse sFlow packet - stub implementation."""
         logger.warning("sflow_parser_not_implemented")

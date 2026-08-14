@@ -10,8 +10,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from flowsight.api.main import storage
 from flowsight import get_logger
+from flowsight.api.main import storage
 
 logger = get_logger(__name__)
 
@@ -81,7 +81,7 @@ async def query_flows(
             filters["dst_ip"] = dst_ip
         if protocol:
             filters["protocol"] = protocol
-        
+
         flows = await storage_backend.query_flows(start, stop, filters, limit)
         return FlowResponse(flows=flows, count=len(flows))
     except Exception as e:
@@ -147,18 +147,18 @@ async def get_summary(
     try:
         # Get multiple stats in parallel
         import asyncio
-        
+
         bandwidth_task = storage_backend.get_bandwidth_timeseries(start, stop, "1m")
         talkers_task = storage_backend.get_top_talkers(start, stop, 5, "bytes")
         protocols_task = storage_backend.get_protocol_distribution(start, stop)
-        
+
         bandwidth, talkers, protocols = await asyncio.gather(
             bandwidth_task, talkers_task, protocols_task
         )
-        
+
         total_bytes = sum(point.get("bytes", 0) for point in bandwidth)
         total_flows = len(bandwidth)  # Approximation
-        
+
         return {
             "time_range": {"start": start, "stop": stop},
             "total_bytes": total_bytes,
