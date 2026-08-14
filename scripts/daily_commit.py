@@ -7,9 +7,9 @@ It can be run manually or scheduled via cron.
 """
 
 import os
-import sys
-import subprocess
 import random
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -72,13 +72,20 @@ def create_daily_feature():
     """Create a meaningful daily feature commit."""
     feature, file_path = random.choice(DAILY_FEATURES)
     day = _get_day_number()
-    
+
     full_path = REPO_PATH / file_path
     full_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Create a basic implementation file
     if file_path.endswith(".py"):
-        class_name = feature.split()[2].replace("(", "").replace(")", "").replace("-", "").title().replace(" ", "")
+        class_name = (
+            feature.split()[2]
+            .replace("(", "")
+            .replace(")", "")
+            .replace("-", "")
+            .title()
+            .replace(" ", "")
+        )
         content = f'''"""
 {feature}
 
@@ -104,7 +111,7 @@ class {class_name}:
 
 # TODO: Implement actual logic
 '''
-        
+
     elif file_path.endswith(".yaml") or file_path.endswith(".yml"):
         content = f"""# {feature}
 # Day {day} - Auto-generated configuration
@@ -113,7 +120,7 @@ class {class_name}:
 """
     else:
         content = f"# {feature}\n# Day {day} - Auto-generated\n"
-    
+
     full_path.write_text(content)
     return feature, file_path
 
@@ -122,7 +129,7 @@ def make_commit(message: str, files: list[str]):
     """Make a git commit."""
     for f in files:
         run_command(["git", "add", f])
-    
+
     run_command(["git", "commit", "-m", message])
     run_command(["git", "push", "origin", "main"])
 
@@ -130,22 +137,22 @@ def make_commit(message: str, files: list[str]):
 def main():
     """Main entry point."""
     print(f"FlowSight Daily Commit - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    
+
     # Check if we're in a git repo - use the script's directory
     repo_path = Path(__file__).parent.parent
     if not (repo_path / ".git").exists():
         print(f"Error: Not a git repository at {repo_path}")
         sys.exit(1)
-    
+
     # Change to repo directory
     os.chdir(repo_path)
-    
+
     # Check for existing changes first
     if has_changes():
         print("Found uncommitted changes, committing them...")
         status = get_git_status()
         print(status)
-        
+
         # Commit existing changes
         run_command(["git", "add", "."])
         day = _get_day_number()
@@ -154,13 +161,13 @@ def main():
         run_command(["git", "push", "origin", "main"])
         print("Committed and pushed existing changes!")
         return
-    
+
     # No changes - create a new feature
     print("No pending changes, creating new daily feature...")
     feature, file_path = create_daily_feature()
     day = _get_day_number()
     msg = f"Day {day}: {feature}"
-    
+
     make_commit(msg, [file_path])
     print(f"Created and pushed: {msg}")
 
