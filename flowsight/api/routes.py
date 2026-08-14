@@ -1,7 +1,7 @@
 """
 FlowSight API Routes
 
-REST API endpoints for flow data queries.
+REST API endpoints for flow data queries and alerting.
 """
 
 from datetime import datetime, timedelta
@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from flowsight import get_logger
 from flowsight.api.main import storage
+from flowsight.alerting.manager import get_alert_manager
+from flowsight.alerting.threshold import Alert, AlertSeverity
 
 logger = get_logger(__name__)
 
@@ -53,6 +55,36 @@ class BandwidthResponse(BaseModel):
 
 class ProtocolDistributionResponse(BaseModel):
     distribution: list[dict[str, Any]]
+
+
+# Alert models
+class AlertResponse(BaseModel):
+    id: str
+    rule_name: str
+    severity: AlertSeverity
+    message: str
+    flow_data: dict[str, Any]
+    timestamp: str
+    acknowledged: bool
+    acknowledged_by: str | None = None
+    acknowledged_at: str | None = None
+
+
+class AlertsResponse(BaseModel):
+    alerts: list[AlertResponse]
+    total: int
+
+
+class AlertSummaryResponse(BaseModel):
+    total: int
+    critical: int
+    warning: int
+    info: int
+
+
+class AcknowledgeResponse(BaseModel):
+    success: bool
+    message: str
 
 
 # Dependency to get storage
@@ -137,6 +169,55 @@ async def get_protocol_distribution(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/geo-map")
+async def get_geo_map(
+    start: str = Query(..., description="Start time"),
+    stop: str = Query(..., description="Stop time"),
+    storage_backend=Depends(get_storage),
+):
+    """Get geographic distribution of traffic."""
+    try:
+        # For now, return mock data structure
+        # In production, this would query InfluxDB for geo data
+        return {
+            "locations": [
+                {
+                    "country_code": "US",
+                    "country_name": "United States",
+                    "latitude": 37.0902,
+                    "longitude": -95.7129,
+                    "bytes_sent": 1073741824,
+                    "bytes_received": 536870912,
+                    "flows": 15000,
+                    "unique_ips": 500
+                },
+                {
+                    "country_code": "CN",
+                    "country_name": "China",
+                    "latitude": 35.8617,
+                    "longitude": 104.1954,
+                    "bytes_sent": 536870912,
+                    "bytes_received": 268435456,
+                    "flows": 8000,
+                    "unique_ips": 200
+                },
+                {
+                    "country_code": "DE",
+                    "country_name": "Germany",
+                    "latitude": 51.1657,
+                    "longitude": 10.4515,
+                    "bytes_sent": 268435456,
+                    "bytes_received": 134217728,
+                    "flows": 5000,
+                    "unique_ips": 150
+                }
+            ]
+        }
+    except Exception as e:
+        logger.exception("geo_map_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/stats/summary")
 async def get_summary(
     start: str = Query(..., description="Start time"),
@@ -169,4 +250,86 @@ async def get_summary(
         }
     except Exception as e:
         logger.exception("summary_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Alert endpoints
+@router.get("/alerts", response_model=AlertsResponse)
+async def get_alerts(
+    start: str = Query(..., description="Start time"),
+    stop: str = Query(..., description="Stop time"),
+    limit: int = Query(100, ge=1, le=1000),
+    severity: AlertSeverity | None = Query(None, description="Filter by severity"),
+    acknowledged: bool | None = Query(None, description="Filter by acknowledged status"),
+):
+    """Get alerts with optional filters."""
+    try:
+        manager = await get_alert_manager()
+        all_alerts = manager.get_alert_history(limit=limit)
+        
+        # Apply filters
+        filtered = all_alerts
+        if severity:
+            filtered = [a for a in filtered if a.severity == severity]
+        if acknowledged is not None:
+            filtered = [a for a in filtered if a.acknowledged == acknowledged]
+        
+        alert_responses = [
+            AlertResponse(
+                id=str(i),
+                rule_name=a.rule_name,
+                severity=a.severity,
+                message=a.message,
+                flow_data=a.flow_data,
+                timestamp=a.timestamp.isoformat(),
+                acknowledged=a.acknowledged,
+                acknowledged_by=a.acknowledged_by,
+                acknowledged_at=a.acknowledged_at.isoformat() if a.acknowledged_at else None,
+            )
+            for i, a in enumerate(filtered)
+        ]
+        
+        return AlertsResponse(alerts=alert_responses, total=len(alert_responses))
+    except Exception as e:
+        logger.exception("get_alerts_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/alerts/summary", response_model=AlertSummaryResponse)
+async def get_alert_summary():
+    """Get alert summary statistics."""
+    try:
+        manager = await get_alert_manager()
+        stats = manager.get_stats()
+        return AlertSummaryResponse(
+            total=stats.get("total_alerts", 0),
+            critical=stats.get("alerts_by_severity", {}).get("critical", 0),
+            warning=stats.get("alerts_by_severity", {}).get("warning", 0),
+            info=stats.get("alerts_by_severity", {}).get("info", 0),
+        )
+    except Exception as e:
+        logger.exception("alert_summary_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/alerts/{alert_id}/acknowledge", response_model=AcknowledgeResponse)
+async def acknowledge_alert(alert_id: str, acknowledged_by: str = "api-user"):
+    """Acknowledge an alert."""
+    try:
+        manager = await get_alert_manager()
+        # Convert alert_id to index
+        try:
+            idx = int(alert_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid alert ID")
+        
+        success = manager.acknowledge_alert(idx, acknowledged_by)
+        if not success:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        
+        return AcknowledgeResponse(success=True, message="Alert acknowledged")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("acknowledge_alert_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

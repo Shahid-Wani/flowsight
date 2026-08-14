@@ -65,6 +65,18 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml:ro
 
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: flowsight-dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    environment:
+      - VITE_API_URL=http://localhost:8000
+
 volumes:
   influxdb-data:
   influxdb-config:
