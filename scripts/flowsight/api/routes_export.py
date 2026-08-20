@@ -1,7 +1,7 @@
 """
 Add flow export (CSV/JSON)
 
-Day 6 implementation - auto-generated daily commit.
+Day 7 implementation - auto-generated daily commit.
 """
 
 from flowsight import get_logger
