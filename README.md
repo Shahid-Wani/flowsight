@@ -1,6 +1,11 @@
 # FlowSight - NetFlow/sFlow/IPFIX Analyzer
 
+[![CI](https://github.com/Shahid-Wani/flowsight/actions/workflows/ci.yml/badge.svg)](https://github.com/Shahid-Wani/flowsight/actions/workflows/ci.yml)
+
 Open-source network flow analyzer for bandwidth visibility & threat hunting.
+
+FlowSight turns NetFlow, sFlow, and IPFIX telemetry into searchable flow records,
+enriched context, anomaly signals, and actionable alerts.
 
 ## Architecture
 
@@ -115,7 +120,7 @@ ruff check .
 mypy flowsight/
 
 # Generate demo data
-python scripts/generate_demo_data.py
+uv run python scripts/generate_demo_data.py
 ```
 
 ## License
