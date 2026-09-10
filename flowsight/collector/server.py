@@ -5,14 +5,13 @@ Asyncio-based UDP server for receiving flow packets.
 """
 
 import asyncio
-import socket
 import struct
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
 from flowsight import get_logger
-from flowsight.parser.netflow_v5 import parse_netflow_v5
+from flowsight.parser.netflow_v5 import NetFlowV5Parser
 from flowsight.parser.netflow_v9 import NetFlowV9IPFIXParser
 from flowsight.parser.sflow import SFlowParser
 
@@ -44,106 +43,26 @@ class FlowProtocolHandler(ABC):
 
 
 class NetFlowV5Handler(FlowProtocolHandler):
-    """NetFlow v5 packet handler."""
+    """NetFlow v5 packet handler.
 
-    # NetFlow v5 header format
-    HEADER_FORMAT = "!HHIIIIHH"
-    HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
+    Delegates parsing to :class:`flowsight.parser.netflow_v5.NetFlowV5Parser`
+    and annotates each flow with the exporter address.
+    """
 
-    # NetFlow v5 flow record format
-    FLOW_FORMAT = "!IIIIHHHHHHBBBBBBBBHBB"
-    FLOW_SIZE = struct.calcsize(FLOW_FORMAT)
+    def __init__(self):
+        self._parser = NetFlowV5Parser()
 
     def can_handle(self, data: bytes) -> bool:
-        if len(data) < self.HEADER_SIZE:
+        if len(data) < self._parser.HEADER_SIZE:
             return False
-        version, count = struct.unpack("!HH", data[:4])
+        version, _count = struct.unpack("!HH", data[:4])
         return version == 5
 
     def parse(self, data: bytes, source_ip: str, source_port: int) -> list[dict[str, Any]]:
-        if len(data) < self.HEADER_SIZE:
-            return []
-
-        header = struct.unpack(self.HEADER_FORMAT, data[: self.HEADER_SIZE])
-        (
-            version,
-            count,
-            sys_uptime,
-            unix_secs,
-            unix_nsecs,
-            flow_sequence,
-            engine_type,
-            engine_id,
-            sampling_interval,
-        ) = header
-
-        flows = []
-        offset = self.HEADER_SIZE
-
-        for i in range(count):
-            if offset + self.FLOW_SIZE > len(data):
-                break
-
-            flow_data = struct.unpack(self.FLOW_FORMAT, data[offset : offset + self.FLOW_SIZE])
-            offset += self.FLOW_SIZE
-
-            (
-                src_addr,
-                dst_addr,
-                next_hop,
-                input_iface,
-                output_iface,
-                packet_count,
-                byte_count,
-                start_time,
-                end_time,
-                src_port,
-                dst_port,
-                pad1,
-                tcp_flags,
-                proto,
-                tos,
-                src_as,
-                dst_as,
-                src_mask,
-                dst_mask,
-                pad2,
-            ) = flow_data
-
-            # Convert IPs
-            src_ip = socket.inet_ntoa(struct.pack("!I", src_addr))
-            dst_ip = socket.inet_ntoa(struct.pack("!I", dst_addr))
-            next_hop_ip = socket.inet_ntoa(struct.pack("!I", next_hop))
-
-            flow = {
-                "version": 5,
-                "source_ip": source_ip,
-                "source_port": source_port,
-                "src_ip": src_ip,
-                "dst_ip": dst_ip,
-                "next_hop": next_hop_ip,
-                "input_interface": input_iface,
-                "output_interface": output_iface,
-                "packet_count": packet_count,
-                "byte_count": byte_count,
-                "start_time": start_time,
-                "end_time": end_time,
-                "src_port": src_port,
-                "dst_port": dst_port,
-                "tcp_flags": tcp_flags,
-                "protocol": proto,
-                "tos": tos,
-                "src_as": src_as,
-                "dst_as": dst_as,
-                "src_mask": src_mask,
-                "dst_mask": dst_mask,
-                "sys_uptime": sys_uptime,
-                "unix_secs": unix_secs,
-                "unix_nsecs": unix_nsecs,
-                "flow_sequence": flow_sequence,
-            }
-            flows.append(flow)
-
+        flows = self._parser.parse(data)
+        for flow in flows:
+            flow["source_ip"] = source_ip
+            flow["source_port"] = source_port
         return flows
 
 
