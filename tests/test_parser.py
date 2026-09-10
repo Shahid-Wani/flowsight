@@ -5,9 +5,11 @@ Tests for FlowSight NetFlow v5, NetFlow v9/IPFIX, and sFlow parsers.
 import socket
 import struct
 
+import pytest
+
 from flowsight.parser.netflow_v5 import NetFlowV5Parser, parse_netflow_v5
-from flowsight.parser.netflow_v9 import NetFlowV9IPFIXParser, parse_netflow_v9, parse_ipfix
-from flowsight.parser.sflow import SFlowParser, parse_sflow
+from flowsight.parser.netflow_v9 import NetFlowV9IPFIXParser
+from flowsight.parser.sflow import SFlowParser
 
 
 class TestNetFlowV5Parser:
@@ -232,21 +234,9 @@ class TestSFlowParser:
         result = parser.parse(header, "192.168.1.1", 6343)
         assert result == []
 
+    @pytest.mark.skip(reason="counter sample construction not implemented yet")
     def test_parse_sflow_with_counter_sample(self):
         """Test parsing sFlow with generic interface counters."""
-        agent_ip = struct.unpack("!I", socket.inet_aton("192.168.1.1"))[0]
-        header = struct.pack("!IIIIII", 5, agent_ip, 0, 1, 1000, 1)  # 1 sample
-        
-        # Counter sample: type=2 (counter), length=24 (header + 1 generic counter)
-        # Counter sample header: sequence=1, source_id_type=0, source_id_index=1
-        counter_header = struct.pack("!III", 1, 0, 1)
-        # Generic counter: type=1, length=76 (header + 18 64-bit values)
-        # We'll just send a minimal counter
-        counter_type_len = struct.pack("!II", 1, 20)  # type=1, length=20 (minimal)
-        counter_data = struct.pack("!Q", 12345)  # just if_index for test
-        
-        # Actually let's skip this complex test for now
-        pass
 
 
 class TestConfig:
@@ -313,7 +303,7 @@ class TestEnrichment:
 
     def test_enrichment_manager_init(self):
         """Test enrichment manager initialization."""
-        from flowsight.enrichment.manager import EnrichmentManager, EnrichmentConfig
+        from flowsight.enrichment.manager import EnrichmentConfig, EnrichmentManager
         config = EnrichmentConfig(geoip_enabled=False, asn_enabled=False, threat_intel_enabled=False)
         manager = EnrichmentManager(config)
         assert manager is not None
@@ -324,7 +314,7 @@ class TestAlerting:
 
     def test_threshold_rule_creation(self):
         """Test threshold rule creation."""
-        from flowsight.alerting.threshold import ThresholdRule, AlertSeverity
+        from flowsight.alerting.threshold import AlertSeverity, ThresholdRule
         rule = ThresholdRule(
             name="test_rule",
             field="bytes",
@@ -338,8 +328,8 @@ class TestAlerting:
 
     def test_threshold_rule_operators(self):
         """Test all threshold rule operators."""
-        from flowsight.alerting.threshold import ThresholdRule, AlertSeverity
-        
+        from flowsight.alerting.threshold import AlertSeverity, ThresholdRule
+
         operators_tests = [
             (">", 1000, 2000, True),
             (">", 1000, 500, False),
@@ -354,7 +344,7 @@ class TestAlerting:
             ("!=", 1000, 500, True),
             ("!=", 1000, 1000, False),
         ]
-        
+
         for op, threshold, value, expected in operators_tests:
             rule = ThresholdRule(
                 name="test",
@@ -367,13 +357,13 @@ class TestAlerting:
 
     def test_threshold_alert_engine_init(self):
         """Test threshold alert engine initialization."""
-        from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, AlertSeverity
+        from flowsight.alerting.threshold import ThresholdAlertEngine
         engine = ThresholdAlertEngine()
         assert engine is not None
 
     def test_alert_engine_add_rule(self):
         """Test adding rules to alert engine."""
-        from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, AlertSeverity
+        from flowsight.alerting.threshold import AlertSeverity, ThresholdAlertEngine, ThresholdRule
         engine = ThresholdAlertEngine()
         rule = ThresholdRule(
             name="test_rule",
@@ -387,7 +377,7 @@ class TestAlerting:
 
     def test_alert_engine_evaluate(self):
         """Test evaluating flows against rules."""
-        from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, AlertSeverity
+        from flowsight.alerting.threshold import AlertSeverity, ThresholdAlertEngine, ThresholdRule
         engine = ThresholdAlertEngine()
         rule = ThresholdRule(
             name="high_bytes",
@@ -447,17 +437,18 @@ class TestDetection:
     def test_statistical_detector_add_sample(self):
         """Test adding samples to statistical detector."""
         import asyncio
+
         from flowsight.detection.statistical import StatisticalAnomalyDetector
-        
+
         detector = StatisticalAnomalyDetector(window_size=100, min_samples=5)
-        
+
         # Add samples
         async def test():
             for i in range(10):
                 await detector.add_sample({"bytes": 1000 + i * 100})
             stats = detector.get_stats()
             assert stats["samples_per_field"]["bytes"] == 10
-        
+
         asyncio.run(test())
 
     def test_ml_detector_init(self):

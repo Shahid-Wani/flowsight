@@ -34,8 +34,15 @@ jobs:
       - name: Run tests
         run: python -m pytest
 
+      - name: CLI entry points respond
+        run: |
+          flowsight-collector --help
+          flowsight-api --help
+          flowsight-enrich --help
+          flowsight-detect --help
+
   lint:
-    name: Ruff
+    name: Ruff (core)
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -50,5 +57,25 @@ jobs:
       - name: Install lint tool
         run: python -m pip install ruff
 
-      - name: Run Ruff on changed modules
-        run: ruff check flowsight/demo.py scripts/generate_demo_data.py tests/test_demo_data.py
+      - name: Run Ruff core rules (blocking)
+        run: ruff check --select E4,E7,E9,F,W,I flowsight/ tests/ scripts/generate_demo_data.py
+
+  lint-strict:
+    name: Ruff (strict debt tracker)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install lint tool
+        run: python -m pip install ruff
+
+      - name: Run Ruff strict profile (non-blocking debt counter)
+        run: ruff check --exit-zero --statistics flowsight/ tests/ scripts/generate_demo_data.py

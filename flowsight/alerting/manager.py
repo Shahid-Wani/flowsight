@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from flowsight import get_logger
-from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, Alert, AlertSeverity
+from flowsight.alerting.threshold import Alert, AlertSeverity, ThresholdAlertEngine, ThresholdRule
 
 logger = get_logger(__name__)
 

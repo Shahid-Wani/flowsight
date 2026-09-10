@@ -11,9 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from flowsight import get_logger
-from flowsight.api.main import storage
 from flowsight.alerting.manager import get_alert_manager
-from flowsight.alerting.threshold import Alert, AlertSeverity
+from flowsight.alerting.threshold import AlertSeverity
+from flowsight.api.deps import get_storage
 
 logger = get_logger(__name__)
 
@@ -85,13 +85,6 @@ class AlertSummaryResponse(BaseModel):
 class AcknowledgeResponse(BaseModel):
     success: bool
     message: str
-
-
-# Dependency to get storage
-async def get_storage():
-    if storage is None:
-        raise HTTPException(status_code=503, detail="Storage not initialized")
-    return storage
 
 
 @router.get("/flows", response_model=FlowResponse)
@@ -266,14 +259,14 @@ async def get_alerts(
     try:
         manager = await get_alert_manager()
         all_alerts = manager.get_alert_history(limit=limit)
-        
+
         # Apply filters
         filtered = all_alerts
         if severity:
             filtered = [a for a in filtered if a.severity == severity]
         if acknowledged is not None:
             filtered = [a for a in filtered if a.acknowledged == acknowledged]
-        
+
         alert_responses = [
             AlertResponse(
                 id=str(i),
@@ -288,7 +281,7 @@ async def get_alerts(
             )
             for i, a in enumerate(filtered)
         ]
-        
+
         return AlertsResponse(alerts=alert_responses, total=len(alert_responses))
     except Exception as e:
         logger.exception("get_alerts_failed", error=str(e))
@@ -322,11 +315,11 @@ async def acknowledge_alert(alert_id: str, acknowledged_by: str = "api-user"):
             idx = int(alert_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid alert ID")
-        
+
         success = manager.acknowledge_alert(idx, acknowledged_by)
         if not success:
             raise HTTPException(status_code=404, detail="Alert not found")
-        
+
         return AcknowledgeResponse(success=True, message="Alert acknowledged")
     except HTTPException:
         raise

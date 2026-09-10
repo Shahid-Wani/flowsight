@@ -8,8 +8,12 @@ Supports YAML config files and environment variables.
 from pathlib import Path
 from typing import Literal
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 
 class CollectorConfig(BaseSettings):
@@ -146,20 +150,28 @@ class Settings(BaseSettings):
     alerting: AlertingConfig = AlertingConfig()
     logging: LoggingConfig = LoggingConfig()
 
-    @field_validator(
-        "collector",
-        "storage",
-        "enrichment",
-        "detection",
-        "api",
-        "alerting",
-        "logging",
-        mode="before",
-    )
     @classmethod
-    def _load_from_yaml(cls, v):
-        """Allow nested config to be loaded from YAML."""
-        return v
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Add YAML as a settings source.
+
+        Supports an explicit file via ``Settings(_yaml_file=...)`` (used by
+        ``load_config`` and the CLI ``--config`` option); otherwise falls
+        back to the ``yaml_file`` declared in ``model_config``.
+        """
+        yaml_file = init_settings.init_kwargs.pop("_yaml_file", None)
+        yaml_source = (
+            YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file)
+            if yaml_file
+            else YamlConfigSettingsSource(settings_cls)
+        )
+        return (init_settings, env_settings, dotenv_settings, yaml_source, file_secret_settings)
 
 
 # Global settings instance

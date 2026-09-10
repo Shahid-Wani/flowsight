@@ -4,9 +4,9 @@ FlowSight Alerting Module
 Threshold-based alerting, alert history, and notification handlers.
 """
 
-from flowsight.alerting.threshold import ThresholdAlertEngine, ThresholdRule, AlertSeverity
-from flowsight.alerting.manager import AlertManager, AlertHandler
-from flowsight.alerting.handlers import LogHandler, WebhookHandler, EmailHandler
+from flowsight.alerting.handlers import EmailHandler, LogHandler, WebhookHandler
+from flowsight.alerting.manager import AlertHandler, AlertManager
+from flowsight.alerting.threshold import AlertSeverity, ThresholdAlertEngine, ThresholdRule
 
 __all__ = [
     "ThresholdAlertEngine",

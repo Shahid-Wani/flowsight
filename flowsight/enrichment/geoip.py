@@ -4,7 +4,6 @@ GeoIP Enrichment
 MaxMind GeoLite2 database integration for IP geolocation.
 """
 
-import logging
 from dataclasses import dataclass
 from typing import Any
 

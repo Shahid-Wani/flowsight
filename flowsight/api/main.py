@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
 from flowsight import get_logger, settings, setup_logging
+from flowsight.api import deps
 from flowsight.api.routes import router as api_router
 from flowsight.api.websocket import router as ws_router
 from flowsight.storage.influxdb import InfluxDBStorage
@@ -21,31 +22,37 @@ from flowsight.storage.influxdb import InfluxDBStorage
 console = Console()
 logger = get_logger(__name__)
 
-# Global storage instance
-storage: InfluxDBStorage | None = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global storage
-
     setup_logging()
     logger.info("starting_api_server", host=settings.api.host, port=settings.api.port)
 
-    # Initialize storage
+    # Initialize storage. If the backend is unreachable, start in degraded
+    # mode: /health stays available and storage-backed routes return 503.
     storage = InfluxDBStorage()
-    await storage.connect()
-
-    # Store in app state
-    app.state.storage = storage
+    try:
+        await storage.connect()
+        deps.storage = storage
+        app.state.storage = storage
+    except Exception as e:
+        logger.warning(
+            "influxdb_unavailable_starting_degraded",
+            url=settings.storage.url,
+            error=str(e),
+        )
+        await storage.disconnect()
+        deps.storage = None
+        app.state.storage = None
 
     try:
         yield
     finally:
         logger.info("stopping_api_server")
-        if storage:
-            await storage.disconnect()
+        if deps.storage:
+            await deps.storage.disconnect()
+        deps.storage = None
 
 
 def create_app() -> FastAPI:

@@ -4,8 +4,6 @@ ML Anomaly Detection
 Isolation Forest based anomaly detection for network flow data.
 """
 
-import asyncio
-import pickle
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -59,11 +57,11 @@ class MLAnomalyDetector:
         # Model components
         self.model: IsolationForest | None = None
         self.scaler: StandardScaler | None = None
-        
+
         # Training buffer
         self._training_buffer: list[np.ndarray] = []
         self._samples_since_retrain = 0
-        
+
         # Load or initialize model
         self._load_or_init_model()
 
@@ -97,8 +95,8 @@ class MLAnomalyDetector:
     def _extract_features(self, flow: dict[str, Any]) -> np.ndarray | None:
         """Extract numerical features from flow."""
         features = []
-        for field in self.feature_fields:
-            value = flow.get(field)
+        for feature_name in self.feature_fields:
+            value = flow.get(feature_name)
             if value is None:
                 return None
             try:
@@ -114,10 +112,10 @@ class MLAnomalyDetector:
             features = self._extract_features(flow)
             if features is not None:
                 feature_matrix.append(features.flatten())
-        
+
         if len(feature_matrix) < 10:  # Need minimum samples
             return None
-        
+
         return np.array(feature_matrix)
 
     async def train(self, flows: list[dict[str, Any]]) -> bool:
@@ -130,16 +128,16 @@ class MLAnomalyDetector:
         try:
             # Fit scaler
             X_scaled = self.scaler.fit_transform(X)
-            
+
             # Train model
             self.model.fit(X_scaled)
-            
+
             # Save model
             self._save_model(len(X))
-            
+
             logger.info("ml_model_trained", n_samples=len(X), n_features=X.shape[1])
             return True
-            
+
         except Exception as e:
             logger.exception("ml_training_failed", error=str(e))
             return False
@@ -166,7 +164,7 @@ class MLAnomalyDetector:
                 return True
             except Exception as e:
                 logger.exception("ml_incremental_retrain_failed", error=str(e))
-        
+
         return False
 
     def _save_model(self, n_samples: int):
@@ -194,13 +192,13 @@ class MLAnomalyDetector:
         try:
             # Scale features
             features_scaled = self.scaler.transform(features)
-            
+
             # Predict
             prediction = self.model.predict(features_scaled)[0]  # -1 = anomaly, 1 = normal
             score = self.model.score_samples(features_scaled)[0]  # Lower = more anomalous
-            
+
             is_anomaly = prediction == -1
-            
+
             result = MLDetectionResult(
                 is_anomaly=is_anomaly,
                 score=float(score),
@@ -211,7 +209,7 @@ class MLAnomalyDetector:
                     "contamination": self.contamination,
                 },
             )
-            
+
             if is_anomaly:
                 logger.warning(
                     "ml_anomaly_detected",
@@ -219,12 +217,12 @@ class MLAnomalyDetector:
                     threshold=self.contamination,
                     features=result.features,
                 )
-            
+
             # Add to incremental retraining
             await self.retrain_incremental(flow)
-            
+
             return result
-            
+
         except Exception as e:
             logger.exception("ml_detection_failed", error=str(e))
             return None
@@ -237,32 +235,32 @@ class MLAnomalyDetector:
         # Extract features for all flows
         feature_matrix = []
         valid_indices = []
-        
+
         for i, flow in enumerate(flows):
             features = self._extract_features(flow)
             if features is not None:
                 feature_matrix.append(features.flatten())
                 valid_indices.append(i)
-        
+
         if not feature_matrix:
             return [None] * len(flows)
 
         X = np.array(feature_matrix)
-        
+
         try:
             X_scaled = self.scaler.transform(X)
             predictions = self.model.predict(X_scaled)
             scores = self.model.score_samples(X_scaled)
-            
+
             results = [None] * len(flows)
             for idx, (pred, score) in enumerate(zip(predictions, scores)):
                 flow_idx = valid_indices[idx]
                 is_anomaly = pred == -1
-                
+
                 features_dict = {
                     field: float(X[idx, i]) for i, field in enumerate(self.feature_fields)
                 }
-                
+
                 results[flow_idx] = MLDetectionResult(
                     is_anomaly=is_anomaly,
                     score=float(score),
@@ -273,7 +271,7 @@ class MLAnomalyDetector:
                         "contamination": self.contamination,
                     },
                 )
-                
+
                 if is_anomaly:
                     logger.warning(
                         "ml_anomaly_detected",
@@ -281,13 +279,13 @@ class MLAnomalyDetector:
                         threshold=self.contamination,
                         features=features_dict,
                     )
-            
+
             # Incremental retraining
             for flow in flows:
                 await self.retrain_incremental(flow)
-            
+
             return results
-            
+
         except Exception as e:
             logger.exception("ml_batch_detection_failed", error=str(e))
             return [None] * len(flows)
@@ -312,7 +310,7 @@ def create_default_ml_detector() -> MLAnomalyDetector | None:
     """Create ML detector with default configuration from settings."""
     if not settings.detection.ml.enabled:
         return None
-    
+
     return MLAnomalyDetector(
         model_path=settings.detection.ml.model_path,
         contamination=0.01,

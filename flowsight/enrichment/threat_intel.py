@@ -5,8 +5,6 @@ Integration with AbuseIPDB, AlienVault OTX, and other threat intel sources.
 """
 
 import asyncio
-import hashlib
-import time
 from dataclasses import dataclass
 from typing import Any
 

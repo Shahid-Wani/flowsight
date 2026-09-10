@@ -9,9 +9,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from flowsight import get_logger
-from flowsight.config import settings
-from flowsight.enrichment.geoip import GeoIPEnrichment
 from flowsight.enrichment.asn import ASNEnrichment
+from flowsight.enrichment.geoip import GeoIPEnrichment
 from flowsight.enrichment.threat_intel import ThreatIntelEnrichment
 
 logger = get_logger(__name__)

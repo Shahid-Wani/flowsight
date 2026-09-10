@@ -4,12 +4,10 @@ Alert Handlers
 Built-in handlers for alert notifications: log, webhook, email.
 """
 
-import smtplib
 import json
-from dataclasses import dataclass
-from datetime import datetime
-from email.mime.text import MIMEText
+import smtplib
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Any
 
 import httpx
