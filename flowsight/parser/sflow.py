@@ -98,7 +98,7 @@ class SFlowParser:
             return []
 
         flows = []
-        
+
         # Convert flow samples to flow records
         for sample in datagram.flow_samples:
             flow = self._flow_sample_to_record(sample, datagram)
@@ -113,7 +113,7 @@ class SFlowParser:
         # Header: version(4) agent_ip(4) sub_agent_id(4) sequence(4) uptime(4) sample_count(4)
         header_fmt = "!IIIIII"
         header_size = struct.calcsize(header_fmt)
-        
+
         version, agent_addr, sub_agent_id, sequence_number, uptime, sample_count = struct.unpack(
             header_fmt, data[:header_size]
         )
@@ -265,7 +265,7 @@ class SFlowParser:
         # src(4) dst(4)
         ihl = data[0] & 0x0F
         header_len = ihl * 4
-        
+
         if len(data) < header_len:
             return {}
 
@@ -320,7 +320,6 @@ class SFlowParser:
         # IPv6 header: version/traffic_class/flow_label(4) payload_length(2) next_header(1) hop_limit(1)
         # src(16) dst(16)
         version_tc_fl = struct.unpack("!I", data[:4])[0]
-        version = (version_tc_fl >> 28) & 0xF
         traffic_class = (version_tc_fl >> 20) & 0xFF
         flow_label = version_tc_fl & 0xFFFFF
 

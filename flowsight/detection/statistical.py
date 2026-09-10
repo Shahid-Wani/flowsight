@@ -7,7 +7,7 @@ Z-score based anomaly detection for network flow data.
 import asyncio
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -47,11 +47,11 @@ class StatisticalAnomalyDetector:
         self.z_threshold = z_threshold
         self.min_samples = min_samples
         self.fields = fields or ["bytes", "packets", "duration", "src_port", "dst_port"]
-        
+
         # Rolling windows per field: {field: [values]}
         self._windows: dict[str, list[float]] = defaultdict(list)
         self._lock = asyncio.Lock()
-        
+
         # Statistics cache
         self._stats_cache: dict[str, tuple[float, float]] = {}  # (mean, std)
         self._cache_dirty = True
@@ -93,23 +93,23 @@ class StatisticalAnomalyDetector:
         values = self._windows.get(field, [])
         if len(values) < self.min_samples:
             return None
-        
+
         arr = np.array(values)
         mean = float(np.mean(arr))
         std = float(np.std(arr))
-        
+
         if std == 0:
             return None
-        
+
         return (mean, std)
 
     def _update_cache(self):
         """Update statistics cache."""
         self._stats_cache = {}
-        for field in self.fields:
-            stats = self._compute_stats(field)
+        for field_name in self.fields:
+            stats = self._compute_stats(field_name)
             if stats:
-                self._stats_cache[field] = stats
+                self._stats_cache[field_name] = stats
         self._cache_dirty = False
 
     async def detect(self, flow: dict[str, Any]) -> list[DetectionResult]:
@@ -123,7 +123,7 @@ class StatisticalAnomalyDetector:
                 value = flow.get(field)
                 if value is None:
                     continue
-                
+
                 try:
                     val = float(value)
                 except (ValueError, TypeError):
@@ -188,7 +188,7 @@ class StatisticalAnomalyDetector:
                     value = flow.get(field)
                     if value is None:
                         continue
-                    
+
                     try:
                         val = float(value)
                     except (ValueError, TypeError):
@@ -225,10 +225,10 @@ class StatisticalAnomalyDetector:
                     self._windows[field].append(val)
                     if len(self._windows[field]) > self.window_size:
                         self._windows[field] = self._windows[field][-self.window_size:]
-                
+
                 if results:
                     self._cache_dirty = True
-                
+
                 all_results.append(results)
 
             return all_results
@@ -244,7 +244,7 @@ class StatisticalAnomalyDetector:
                 field: len(values) for field, values in self._windows.items()
             },
             "cached_stats": {
-                field: {"mean": stats[0], "std": stats[1]} 
+                field: {"mean": stats[0], "std": stats[1]}
                 for field, stats in self._stats_cache.items()
             },
         }
@@ -260,7 +260,7 @@ def create_default_detector() -> StatisticalAnomalyDetector:
     """Create detector with default configuration from settings."""
     if not settings.detection.statistical.enabled:
         return None
-    
+
     return StatisticalAnomalyDetector(
         window_size=settings.detection.statistical.min_samples * 10,
         z_threshold=settings.detection.statistical.zscore_threshold,
