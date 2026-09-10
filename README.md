@@ -95,15 +95,14 @@ alerting:
 flowsight/
 ├── collector/       # UDP flow collectors
 ├── parser/          # NetFlow/IPFIX/sFlow parsers
-├── storage/         # InfluxDB/TimescaleDB writers
+├── storage/         # InfluxDB writers
 ├── enrichment/      # GeoIP, ASN, Threat Intel
 ├── detection/       # Anomaly detection engines
 ├── alerting/        # Alert handlers
 ├── api/             # FastAPI REST + WebSocket
-├── dashboard/       # React frontend (separate repo)
+├── dashboard/       # React frontend
 ├── tests/           # Unit & integration tests
-├── scripts/         # Utility scripts
-└── docs/            # Documentation
+└── scripts/         # Utility scripts
 ```
 
 ## Development
@@ -120,7 +119,11 @@ ruff check .
 mypy flowsight/
 
 # Generate demo data
-uv run python scripts/generate_demo_data.py
+python scripts/generate_demo_data.py --count 1000 --output demo-flows.json
+
+# Enrich and analyze demo flows
+flowsight-enrich -i demo-flows.json -o enriched-flows.json
+flowsight-detect -i demo-flows.json
 ```
 
 ## License
