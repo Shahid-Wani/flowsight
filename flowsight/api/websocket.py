@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from flowsight import get_logger
-from flowsight.api.main import storage
+from flowsight.api import deps
 
 logger = get_logger(__name__)
 
@@ -60,20 +60,20 @@ class ConnectionManager:
         """Periodically broadcast latest stats."""
         while self.active_connections:
             try:
-                if storage and storage._connected:
+                if deps.storage and deps.storage._connected:
                     # Get latest bandwidth point
                     from datetime import datetime, timedelta
 
                     stop = datetime.utcnow().isoformat()
                     start = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
 
-                    series = await storage.get_bandwidth_timeseries(start, stop, "10s")
+                    series = await deps.storage.get_bandwidth_timeseries(start, stop, "10s")
                     if series:
                         latest = series[-1]
                         await self.broadcast({"type": "bandwidth_update", "data": latest})
 
                     # Get top talkers
-                    talkers = await storage.get_top_talkers(start, stop, 5, "bytes")
+                    talkers = await deps.storage.get_top_talkers(start, stop, 5, "bytes")
                     await self.broadcast({"type": "top_talkers_update", "data": talkers})
             except Exception as e:
                 logger.warning("broadcast_error", error=str(e))
@@ -132,13 +132,13 @@ async def handle_client_message(websocket: WebSocket, message: dict[str, Any]):
 
 async def handle_query(websocket: WebSocket, query_type: str, params: dict[str, Any]):
     """Handle ad-hoc queries via WebSocket."""
-    if not storage or not storage._connected:
+    if not deps.storage or not deps.storage._connected:
         await websocket.send_json({"type": "error", "message": "Storage not available"})
         return
 
     try:
         if query_type == "top_talkers":
-            result = await storage.get_top_talkers(
+            result = await deps.storage.get_top_talkers(
                 params.get("start", "-5m"),
                 params.get("stop", "now"),
                 params.get("limit", 10),
@@ -148,14 +148,14 @@ async def handle_query(websocket: WebSocket, query_type: str, params: dict[str, 
                 {"type": "query_result", "query": "top_talkers", "data": result}
             )
         elif query_type == "bandwidth":
-            result = await storage.get_bandwidth_timeseries(
+            result = await deps.storage.get_bandwidth_timeseries(
                 params.get("start", "-1h"), params.get("stop", "now"), params.get("interval", "1m")
             )
             await websocket.send_json(
                 {"type": "query_result", "query": "bandwidth", "data": result}
             )
         elif query_type == "protocols":
-            result = await storage.get_protocol_distribution(
+            result = await deps.storage.get_protocol_distribution(
                 params.get("start", "-1h"), params.get("stop", "now")
             )
             await websocket.send_json(
