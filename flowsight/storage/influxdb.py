@@ -109,8 +109,9 @@ class InfluxDBStorage(StorageBackend):
 
         point = Point("flow").time(dt)
 
-        # Tags (indexed)
-        for tag_field in [
+        # Tags (indexed): wire fields plus enrichment output we want to
+        # filter queries on (GeoIP country, ASN).
+        tag_fields = [
             "src_ip",
             "dst_ip",
             "protocol",
@@ -118,21 +119,18 @@ class InfluxDBStorage(StorageBackend):
             "dst_port",
             "tos",
             "tcp_flags",
-        ]:
-            if tag_field in flow and flow[tag_field] is not None:
+            "src_country_code",
+            "dst_country_code",
+            "src_asn",
+            "dst_asn",
+        ]
+        for tag_field in tag_fields:
+            if flow.get(tag_field) is not None:
                 point.tag(tag_field, str(flow[tag_field]))
 
         # Fields (values)
         for field_name, value in flow.items():
-            if field_name in [
-                "src_ip",
-                "dst_ip",
-                "protocol",
-                "src_port",
-                "dst_port",
-                "tos",
-                "tcp_flags",
-            ]:
+            if field_name in tag_fields:
                 continue  # Already added as tags
             if field_name in ["unix_secs", "unix_nsecs", "sys_uptime", "flow_sequence"]:
                 continue  # Metadata
@@ -183,7 +181,7 @@ class InfluxDBStorage(StorageBackend):
         if not self._connected:
             await self.connect()
 
-        field = "byte_count" if by == "bytes" else "packet_count"
+        field = by
 
         flux_query = f"""
         from(bucket: "{settings.storage.bucket}")
@@ -213,7 +211,7 @@ class InfluxDBStorage(StorageBackend):
         from(bucket: "{settings.storage.bucket}")
           |> range(start: {start}, stop: {stop})
           |> filter(fn: (r) => r._measurement == "flow")
-          |> filter(fn: (r) => r._field == "byte_count")
+          |> filter(fn: (r) => r._field == "bytes")
           |> group(columns: ["protocol"])
           |> sum()
           |> sort(columns: ["_value"], desc: true)
@@ -238,7 +236,7 @@ class InfluxDBStorage(StorageBackend):
         from(bucket: "{settings.storage.bucket}")
           |> range(start: {start}, stop: {stop})
           |> filter(fn: (r) => r._measurement == "flow")
-          |> filter(fn: (r) => r._field == "byte_count")
+          |> filter(fn: (r) => r._field == "bytes")
           |> aggregateWindow(every: {interval}, fn: sum, createEmpty: true)
           |> yield(name: "bandwidth")
         """
