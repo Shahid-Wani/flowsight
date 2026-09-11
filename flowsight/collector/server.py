@@ -3,9 +3,9 @@ FlowSight Collector - UDP Server
 
 Asyncio-based UDP server for receiving flow packets.
 """
-
 import asyncio
 import struct
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -101,24 +101,27 @@ class FlowCollector:
         port: int = 2055,
         protocols: list[str] | None = None,
         workers: int = 4,
+        pipeline: Any | None = None,
     ):
         self.host = host
         self.port = port
         self.protocols = protocols or ["netflow_v5", "netflow_v9", "ipfix", "sflow"]
         self.workers = workers
+        self.pipeline = pipeline
         self._transport: asyncio.DatagramTransport | None = None
-        self._protocol: "FlowCollectorProtocol | None" = None
+        self._protocol: FlowCollectorProtocol | None = None
         self._handlers: dict[str, FlowProtocolHandler] = {}
         self._queue: asyncio.Queue[FlowPacket] = asyncio.Queue(maxsize=10000)
+        self._worker_tasks: list[asyncio.Task] = []
         self._running = False
         self._init_handlers()
 
     def _init_handlers(self):
-            """Initialize protocol handlers."""
-            self._handlers["netflow_v5"] = NetFlowV5Handler()
-            self._handlers["netflow_v9"] = NetFlowV9IPFIXHandler()
-            self._handlers["ipfix"] = NetFlowV9IPFIXHandler()
-            self._handlers["sflow"] = SFlowHandler()
+        """Initialize protocol handlers."""
+        self._handlers["netflow_v5"] = NetFlowV5Handler()
+        self._handlers["netflow_v9"] = NetFlowV9IPFIXHandler()
+        self._handlers["ipfix"] = NetFlowV9IPFIXHandler()
+        self._handlers["sflow"] = SFlowHandler()
 
     async def start(self):
         """Start the collector."""
@@ -135,11 +138,17 @@ class FlowCollector:
         logger.info("collector_started", host=self.host, port=self.port)
 
         # Start worker tasks
-        for i in range(self.workers):
-            asyncio.create_task(self._worker(f"worker-{i}"))
+        self._worker_tasks = [
+            asyncio.create_task(self._worker(f"worker-{i}")) for i in range(self.workers)
+        ]
 
-    async def stop(self):
-        """Stop the collector."""
+    async def stop(self, timeout: float = 5.0):
+        """Stop the collector.
+
+        Closes the transport, waits up to ``timeout`` for workers to
+        finish in-flight packets, and logs how many queued packets were
+        dropped. Never blocks indefinitely.
+        """
         if not self._running:
             return
 
@@ -147,8 +156,22 @@ class FlowCollector:
         if self._transport:
             self._transport.close()
 
-        # Wait for queue to drain
-        await self._queue.join()
+        if self._worker_tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._worker_tasks, return_exceptions=True),
+                    timeout=timeout,
+                )
+            except TimeoutError:
+                logger.warning("collector_workers_stop_timeout", workers=len(self._worker_tasks))
+                for task in self._worker_tasks:
+                    task.cancel()
+                await asyncio.gather(*self._worker_tasks, return_exceptions=True)
+
+        dropped = self._queue.qsize()
+        if dropped:
+            logger.warning("collector_queue_dropped_on_shutdown", dropped=dropped)
+
         logger.info("collector_stopped")
 
     async def wait_closed(self):
@@ -171,15 +194,15 @@ class FlowCollector:
         logger.debug("worker_stopped", worker=name)
 
     async def _process_packet(self, packet: FlowPacket):
-        """Process a parsed flow packet."""
-        # This will be connected to storage/enrichment/detection in later days
+        """Process a parsed flow packet through the pipeline."""
+        if self.pipeline is not None and packet.parsed_flows:
+            await self.pipeline.process_flows(packet.parsed_flows)
         logger.debug(
-            "packet_received",
+            "packet_processed",
             source_ip=packet.source_ip,
             protocol=packet.protocol,
             flow_count=len(packet.parsed_flows),
         )
-        # TODO: Send to storage pipeline
 
 
 class FlowCollectorProtocol(asyncio.DatagramProtocol):
@@ -204,7 +227,7 @@ class FlowCollectorProtocol(asyncio.DatagramProtocol):
                             source_ip=source_ip,
                             source_port=source_port,
                             protocol=protocol_name,
-                            timestamp=asyncio.get_event_loop().time(),
+                            timestamp=time.monotonic(),
                             parsed_flows=flows,
                         )
                         # Non-blocking put

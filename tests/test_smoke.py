@@ -83,6 +83,30 @@ def test_detection_cli_entrypoint():
     assert callable(main)
 
 
+def test_alert_handlers_registered_from_config():
+    """get_alert_manager() must register handlers from settings.alerting."""
+    import flowsight.alerting.manager as am
+    from flowsight import settings
+
+    am._alert_manager = None  # reset the global singleton
+
+    original = settings.alerting.handlers
+    try:
+        settings.alerting.handlers = [
+            type(original[0])(type="log", level="info"),
+            type(original[0])(type="webhook", url="http://example.com/hook", headers={}, template="", level="info"),
+        ]
+        import asyncio
+
+        manager = asyncio.run(am.get_alert_manager())
+        names = [h.name for h in manager.handlers]
+        assert "log" in names
+        assert "webhook" in names
+    finally:
+        settings.alerting.handlers = original
+        am._alert_manager = None
+
+
 def _build_netflow_v5_packet() -> bytes:
     """Build a minimal valid NetFlow v5 packet with one flow record."""
     header = struct.pack(
@@ -137,8 +161,8 @@ class TestNetFlowV5Handler:
         assert len(flows) == 1
         assert flows[0]["src_ip"] == "192.168.1.100"
         assert flows[0]["dst_ip"] == "10.0.0.1"
-        assert flows[0]["byte_count"] == 50000
-        assert flows[0]["packet_count"] == 100
+        assert flows[0]["bytes"] == 50000
+        assert flows[0]["packets"] == 100
         assert flows[0]["protocol"] == 6
         assert flows[0]["source_ip"] == "127.0.0.1"
 

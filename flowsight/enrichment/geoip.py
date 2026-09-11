@@ -41,17 +41,23 @@ class GeoIPEnrichment:
         self._reader: maxminddb.Reader | None = None
         self._cache: dict[str, GeoIPInfo] = {}
         self._cache_ttl = settings.enrichment.cache_ttl
+        self._warned_missing = False
 
     def open(self):
-        """Open the MaxMind database."""
+        """Open the MaxMind database (warns once if missing)."""
         try:
             self._reader = maxminddb.open_database(self.db_path)
+            self._warned_missing = False
             logger.info("geoip_database_opened", path=self.db_path)
         except FileNotFoundError:
-            logger.warning("geoip_database_not_found", path=self.db_path)
+            if not self._warned_missing:
+                logger.warning("geoip_database_not_found", path=self.db_path)
+                self._warned_missing = True
             self._reader = None
         except Exception as e:
-            logger.exception("geoip_open_failed", error=str(e))
+            if not self._warned_missing:
+                logger.exception("geoip_open_failed", error=str(e))
+                self._warned_missing = True
             self._reader = None
 
     def close(self):
