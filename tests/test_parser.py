@@ -84,8 +84,8 @@ class TestNetFlowV5Parser:
         assert flow_data["src_ip"] == "192.168.1.1"
         assert flow_data["dst_ip"] == "10.0.0.1"
         assert flow_data["next_hop"] == "192.168.1.254"
-        assert flow_data["packet_count"] == 100
-        assert flow_data["byte_count"] == 10000
+        assert flow_data["packets"] == 100
+        assert flow_data["bytes"] == 10000
         assert flow_data["src_port"] == 12345
         assert flow_data["dst_port"] == 80
         assert flow_data["protocol"] == 6
