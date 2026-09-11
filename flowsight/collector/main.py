@@ -14,13 +14,14 @@ from rich.console import Console
 
 from flowsight import get_logger, settings, setup_logging
 from flowsight.collector.server import FlowCollector
+from flowsight.pipeline import Pipeline
 
 console = Console()
 logger = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(collector: FlowCollector):
+async def lifespan(collector: FlowCollector, pipeline: Pipeline):
     """Application lifespan manager."""
     logger.info("starting_flow_collector", listen=settings.collector.listen)
     await collector.start()
@@ -28,26 +29,40 @@ async def lifespan(collector: FlowCollector):
         yield
     finally:
         logger.info("stopping_flow_collector")
-        await collector.stop()
+        try:
+            await asyncio.shield(collector.stop())
+        except Exception as e:
+            logger.warning("collector_stop_failed", error=str(e))
+        try:
+            await asyncio.shield(pipeline.stop())
+        except Exception as e:
+            logger.warning("pipeline_stop_failed", error=str(e))
 
 
 async def run_collector():
     """Run the flow collector."""
     setup_logging()
 
+    pipeline = await Pipeline.from_settings()
     collector = FlowCollector(
         host=settings.collector.listen.split(":")[0],
         port=int(settings.collector.listen.split(":")[1]),
         protocols=settings.collector.protocols,
         workers=settings.collector.workers,
+        pipeline=pipeline,
     )
 
-    # Handle shutdown signals
+    # Handle shutdown signals (POSIX). On Windows add_signal_handler
+    # raises NotImplementedError; shutdown falls back to the
+    # KeyboardInterrupt path handled in main().
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(collector.stop()))
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(collector.stop()))
+    except NotImplementedError:
+        logger.debug("signal_handlers_unavailable_on_windows")
 
-    async with lifespan(collector):
+    async with lifespan(collector, pipeline):
         # Keep running
         await collector.wait_closed()
 
