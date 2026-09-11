@@ -123,12 +123,44 @@ class AlertManager:
 _alert_manager: AlertManager | None = None
 
 
+def _register_configured_handlers(manager: AlertManager) -> None:
+    """Register alert handlers declared in settings.alerting.
+
+    Supports the log and webhook handler types that have
+    implementations; other configured types log a warning and are
+    skipped so a bad config never blocks alerting entirely.
+    """
+    from flowsight import settings
+    from flowsight.alerting.handlers import LogHandler, WebhookHandler
+
+    if not settings.alerting.enabled:
+        return
+
+    for cfg in settings.alerting.handlers:
+        if cfg.type == "log":
+            manager.add_handler(LogHandler())
+        elif cfg.type == "webhook":
+            if not cfg.url:
+                logger.warning("webhook_handler_skipped_no_url")
+                continue
+            manager.add_handler(
+                WebhookHandler(
+                    url=cfg.url,
+                    headers=cfg.headers or None,
+                    template=cfg.template or None,
+                )
+            )
+        else:
+            logger.warning("alert_handler_type_unsupported", type=cfg.type)
+
+
 async def get_alert_manager() -> AlertManager:
     """Get or create the global alert manager."""
     global _alert_manager
     if _alert_manager is None:
         _alert_manager = AlertManager()
         _alert_manager.load_default_rules()
+        _register_configured_handlers(_alert_manager)
     return _alert_manager
 
 
