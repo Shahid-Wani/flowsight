@@ -1,4 +1,4 @@
-import { Card } from '../ui/Card'
+import { Card, CardHeader, CardContent } from '../ui/Card'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
 import { Button } from '../ui/Button'

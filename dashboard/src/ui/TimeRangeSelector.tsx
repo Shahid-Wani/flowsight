@@ -1,4 +1,4 @@
-import { useState, ChangeEvent } from 'react'
+import { useState } from 'react'
 
 interface TimeRangeSelectorProps {
   value: string

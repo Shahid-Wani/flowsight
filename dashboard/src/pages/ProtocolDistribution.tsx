@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { Table } from '../ui/Table'
 import { TimeRangeSelector } from '../ui/TimeRangeSelector'
-import { Badge } from '../ui/Badge'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { formatBytes, formatNumber } from '../utils/format'
@@ -25,7 +24,7 @@ export function ProtocolDistribution() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const { isConnected, lastMessage } = useWebSocket('/api/v1/ws/live')
+  const { lastMessage } = useWebSocket('/api/v1/ws/live')
 
   // Handle WebSocket messages for real-time protocol updates
   useEffect(() => {
@@ -78,61 +77,6 @@ export function ProtocolDistribution() {
     'SCTP': '🟤', 'IPv6': '🔷', 'Other': '⚪'
   }
 
-  const columns = [
-    { 
-      key: 'protocol', 
-      header: 'Protocol', 
-      render: (row: ProtocolData) => (
-        <span className="flex items-center gap-2 font-medium">
-          <span>{PROTOCOL_ICONS[row.protocol] || '📦'}</span>
-          <span>{row.protocol}</span>
-        </span>
-      )
-    },
-    { 
-      key: 'bytes', 
-      header: 'Bytes', 
-      sortable: true,
-      render: (row: ProtocolData) => (
-        <span className="font-mono">{formatBytes(row.bytes)}</span>
-      )
-    },
-    { 
-      key: 'packets', 
-      header: 'Packets', 
-      sortable: true,
-      render: (row: ProtocolData) => 
-        row.packets ? <span className="font-mono">{formatNumber(row.packets)}</span> : <span className="text-text-muted">—</span>
-    },
-    { 
-      key: 'flows', 
-      header: 'Flows', 
-      sortable: true,
-      render: (row: ProtocolData) => 
-        row.flows ? <span className="font-mono">{formatNumber(row.flows)}</span> : <span className="text-text-muted">—</span>
-    },
-    { 
-      key: 'percentage', 
-      header: '% of Total', 
-      render: (row: ProtocolData) => {
-        const pct = totalBytes > 0 ? ((row.bytes / totalBytes) * 100).toFixed(1) : '0.0'
-        return (
-          <div className="w-32">
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-2 bg-border rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-primary transition-all duration-500" 
-                  style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
-                />
-              </div>
-              <span className="text-sm font-mono w-12 text-right">{pct}%</span>
-            </div>
-          </div>
-        )
-      }
-    },
-  ]
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -144,6 +88,13 @@ export function ProtocolDistribution() {
           <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
         </div>
       </div>
+
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={fetchData} className="text-sm underline">Retry</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pie Chart */}
@@ -167,7 +118,7 @@ export function ProtocolDistribution() {
                     label={({ protocol, percent }) => `${protocol} ${(percent * 100).toFixed(1)}%`}
                     labelLine={false}
                   >
-                    {protocols.map((entry, index) => (
+                    {protocols.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -209,7 +160,13 @@ export function ProtocolDistribution() {
               />
             </div>
             
-            <Table 
+            {loading ? (
+              <div className="text-center py-12 text-text-muted">
+                <div className="animate-spin inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full mb-2 mx-auto" />
+                <p>Loading protocol data...</p>
+              </div>
+            ) : (
+            <Table
               columns={[
                 { 
                   key: 'protocol', 
@@ -257,11 +214,13 @@ export function ProtocolDistribution() {
                       </div>
                     )
                   }
-              ]} 
-              data={protocols} 
+                },
+              ]}
+              data={protocols}
               striped
               hoverable
             />
+            )}
           </CardContent>
         </Card>
       </div>
@@ -304,7 +263,7 @@ export function ProtocolDistribution() {
                   </div>
                 </div>
               </div>
-            )}
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -336,27 +295,6 @@ function ActivityIcon() {
 
 function UsersIcon() {
   return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatNumber(num: number): string {
-  if (num === 0) return '0'
-  return new Intl.NumberFormat().format(num)
-}
-
-function DownloadIcon() {
-  return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-}
-
-function ActivityIcon() {
-  return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
 }
 
 interface WSMessage {

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Alert, BandwidthPoint, TopTalker } from '../types'
 
 interface WebSocketState {
   isConnected: boolean
@@ -12,7 +11,7 @@ export function useWebSocket(url: string = '/api/v1/ws/live') {
     lastMessage: null,
   })
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectAttempts = useRef(0)
   const maxReconnectAttempts = 5
   const baseReconnectDelay = 1000
