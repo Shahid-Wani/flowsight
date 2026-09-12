@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { TimeRangeSelector } from '../ui/TimeRangeSelector'
 import { Table } from '../ui/Table'
@@ -66,57 +66,6 @@ export function GeoMap() {
   const totalReceived = geoData.reduce((sum, d) => sum + (d.bytes_received || 0), 0)
   const totalFlows = geoData.reduce((sum, d) => sum + (d.flows || 0), 0)
 
-  const columns = [
-    { 
-      key: 'country', 
-      header: 'Country', 
-      render: (row: GeoLocation) => (
-        <span className="flex items-center gap-2 font-medium">
-          <span className="text-lg">{getCountryFlag(row.country_code)}</span>
-          <span>{row.country_name}</span>
-        </span>
-      )
-    },
-    { 
-      key: 'bytes_sent', 
-      header: 'Bytes Sent', 
-      sortable: true,
-      render: (row: GeoLocation) => <span className="font-mono">{formatBytes(row.bytes_sent)}</span>
-    },
-    { 
-      key: 'bytes_received', 
-      header: 'Bytes Received', 
-      sortable: true,
-      render: (row: GeoLocation) => <span className="font-mono">{formatBytes(row.bytes_received)}</span>
-    },
-    { 
-      key: 'total_bytes', 
-      header: 'Total Bytes', 
-      sortable: true,
-      render: (row: GeoLocation) => <span className="font-mono font-semibold">{formatBytes(row.bytes_sent + row.bytes_received)}</span>
-    },
-    { 
-      key: 'flows', 
-      header: 'Flows', 
-      sortable: true,
-      render: (row: GeoLocation) => <span className="font-mono">{formatNumber(row.flows)}</span>
-    },
-    { 
-      key: 'unique_ips', 
-      header: 'Unique IPs', 
-      sortable: true,
-      render: (row: GeoLocation) => <span className="font-mono">{formatNumber(row.unique_ips)}</span>
-    },
-  ]
-
-  const sortedCountries = [...geoData].sort((a, b) => {
-    const aVal = (a as any)[sortConfig.key]
-    const bVal = (b as any)[sortConfig.key]
-    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
-    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
-    return 0
-  })
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -130,8 +79,8 @@ export function GeoMap() {
             <button
               onClick={() => setViewMode('table')}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'table' 
-                  ? 'bg-primary text-white' 
+                viewMode === 'table'
+                  ? 'bg-primary text-white'
                   : 'bg-surface border border-border hover:bg-surface-hover'
               }`}
             >
@@ -140,8 +89,8 @@ export function GeoMap() {
             <button
               onClick={() => setViewMode('map')}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'map' 
-                  ? 'bg-primary text-white' 
+                viewMode === 'map'
+                  ? 'bg-primary text-white'
                   : 'bg-surface border border-border hover:bg-surface-hover'
               }`}
             >
@@ -155,20 +104,27 @@ export function GeoMap() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           title="Total Sent"
-          value={formatBytes(geoData.reduce((sum, d) => sum + (d.bytes_sent || 0), 0))}
+          value={formatBytes(totalSent)}
           icon={<UploadIcon />}
         />
         <StatCard
           title="Total Received"
-          value={formatBytes(geoData.reduce((sum, d) => sum + (d.bytes_received || 0), 0))}
+          value={formatBytes(totalReceived)}
           icon={<DownloadIcon />}
         />
         <StatCard
           title="Total Flows"
-          value={formatNumber(geoData.reduce((sum, d) => sum + (d.flows || 0), 0))}
+          value={formatNumber(totalFlows)}
           icon={<ActivityIcon />}
         />
       </div>
+
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={fetchData} className="text-sm underline">Retry</button>
+        </div>
+      )}
 
       {viewMode === 'map' ? (
         <Card className="h-[600px]">
@@ -214,16 +170,21 @@ export function GeoMap() {
             </div>
           </CardHeader>
           <CardContent>
-            {geoData.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-12 text-text-muted">
+                <div className="animate-spin inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full mb-2 mx-auto" />
+                <p>Loading geo data...</p>
+              </div>
+            ) : geoData.length === 0 ? (
               <div className="text-center py-12 text-text-muted">
                 <p>No geographic data available for this time range</p>
               </div>
             ) : (
-              <Table 
+              <Table
                 columns={[
-                  { 
-                    key: 'country', 
-                    header: 'Country', 
+                  {
+                    key: 'country',
+                    header: 'Country',
                     render: (row: GeoLocation) => (
                       <span className="flex items-center gap-2 font-medium">
                         <span className="text-lg">{getCountryFlag(row.country_code)}</span>
@@ -231,47 +192,41 @@ export function GeoMap() {
                       </span>
                     )
                   },
-                  { 
-                    key: 'bytes_sent', 
-                    header: 'Bytes Sent', 
+                  {
+                    key: 'bytes_sent',
+                    header: 'Bytes Sent',
                     sortable: true,
                     render: (row: GeoLocation) => <span className="font-mono">{formatBytes(row.bytes_sent)}</span>
                   },
-                  { 
-                    key: 'bytes_received', 
-                    header: 'Bytes Received', 
+                  {
+                    key: 'bytes_received',
+                    header: 'Bytes Received',
                     sortable: true,
                     render: (row: GeoLocation) => <span className="font-mono">{formatBytes(row.bytes_received)}</span>
                   },
-                  { 
-                    key: 'total', 
-                    header: 'Total', 
+                  {
+                    key: 'total',
+                    header: 'Total',
                     sortable: true,
                     render: (row: GeoLocation) => <span className="font-mono font-semibold">{formatBytes(row.bytes_sent + row.bytes_received)}</span>
                   },
-                  { 
-                    key: 'flows', 
-                    header: 'Flows', 
+                  {
+                    key: 'flows',
+                    header: 'Flows',
                     sortable: true,
                     render: (row: GeoLocation) => <span className="font-mono">{formatNumber(row.flows)}</span>
                   },
-                  { 
-                    key: 'unique_ips', 
-                    header: 'Unique IPs', 
+                  {
+                    key: 'unique_ips',
+                    header: 'Unique IPs',
                     sortable: true,
                     render: (row: GeoLocation) => <span className="font-mono">{formatNumber(row.unique_ips)}</span>
                   },
-                ]} 
-                data={geoData
-                  .sort((a, b) => {
-                    const aVal = (a as any)[sortConfig.key]
-                    const bVal = (b as any)[sortConfig.key]
-                    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
-                    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
-                    return 0
-                  })}
+                ]}
+                data={sortedData}
                 striped
                 hoverable
+                onHeaderClick={handleSort}
               />
             )}
           </CardContent>
@@ -311,17 +266,4 @@ function getCountryFlag(code: string): string {
   if (!code || code.length !== 2) return '🏳️'
   const offset = 127397
   return String.fromCodePoint(...code.toUpperCase().split('').map(c => c.charCodeAt(0) + offset))
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatNumber(num: number): string {
-  if (num === 0) return '0'
-  return new Intl.NumberFormat().format(num)
 }

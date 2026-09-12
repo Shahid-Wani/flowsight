@@ -38,9 +38,10 @@ export function TopTalkers() {
       try {
         const message: WSMessage = JSON.parse(lastMessage.data)
         if (message.type === 'top_talkers_update' && Array.isArray(message.data)) {
+          const updates: TopTalker[] = message.data
           // Merge with existing data, keeping sort order
           setTopTalkers(prev => {
-            const newMap = new Map(message.data.map(t => [t.src_ip, t]))
+            const newMap = new Map(updates.map(t => [t.src_ip, t]))
             return prev.map(t => newMap.get(t.src_ip) || t)
           })
         }
@@ -199,12 +200,13 @@ export function TopTalkers() {
               <p>Loading top talkers...</p>
             </div>
           ) : (
-            <Table 
-              columns={columns} 
-              data={sortedTalkers} 
+            <Table
+              columns={columns}
+              data={sortedTalkers}
               striped
               hoverable
               onRowClick={(row) => setSelectedTalker(row)}
+              onHeaderClick={handleSort}
             />
           )}
         </CardContent>
@@ -300,22 +302,4 @@ function getProtocolName(proto: number): string {
     1: 'ICMP', 6: 'TCP', 17: 'UDP', 2: 'IGMP', 41: 'IPv6', 47: 'GRE', 50: 'ESP', 51: 'AH', 58: 'ICMPv6', 89: 'OSPF', 132: 'SCTP'
   }
   return protocols[proto] || `Proto ${proto}`
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatNumber(num: number): string {
-  if (num === 0) return '0'
-  return new Intl.NumberFormat().format(num)
-}
-
-interface WSMessage {
-  type: string
-  data: any
 }

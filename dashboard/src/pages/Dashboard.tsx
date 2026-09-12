@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts'
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell } from 'recharts'
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { StatCard } from '../ui/StatCard'
 import { TimeRangeSelector } from '../ui/TimeRangeSelector'
@@ -15,6 +15,8 @@ interface BandwidthPoint {
 interface TopTalker {
   src_ip: string
   value: number
+  packets?: number
+  country_code?: string
 }
 
 interface ProtocolData {
@@ -83,6 +85,7 @@ export function Dashboard() {
     fetchData()
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeRange])
 
   const fetchData = async () => {
@@ -102,7 +105,7 @@ export function Dashboard() {
     } finally {
       setLoading(false)
     }
-  })
+  }
 
   const totalBytes = bandwidthData.reduce((sum, d) => sum + (d.bytes || 0), 0)
   const avgBytesPerSec = bandwidthData.length > 0 
@@ -153,7 +156,7 @@ export function Dashboard() {
           title="Protocols Tracked"
           value={protocols.length.toString()}
           icon={<PieChartIcon />}
-          subtitle={`Active: ${new Set(bandwidthData.map(d => d.protocol)).size}`}
+          subtitle={`Seen: ${new Set(protocols.map(d => d.protocol)).size}`}
         />
       </div>
 
@@ -236,7 +239,7 @@ export function Dashboard() {
                     nameKey="protocol"
                     label={({ protocol, percent }) => `${protocol} ${(percent * 100).toFixed(1)}%`}
                   >
-                    {protocols.map((entry, index) => (
+                    {protocols.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={`var(--chart-color-${index % 8})`} />
                     ))}
                   </Pie>
@@ -344,19 +347,6 @@ function formatTime(time: string): string {
   }
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatNumber(num: number): string {
-  if (num === 0) return '0'
-  return new Intl.NumberFormat().format(num)
-}
-
 // CSS custom properties for chart colors
-// Add to index.css: 
+// Add to index.css:
 // :root { --chart-color-0: #3b82f6; --chart-color-1: #10b981; --chart-color-2: #f59e0b; --chart-color-3: #ef4444; --chart-color-4: #8b5cf6; --chart-color-5: #ec4899; --chart-color-6: #06b6d4; --chart-color-7: #84cc16; }

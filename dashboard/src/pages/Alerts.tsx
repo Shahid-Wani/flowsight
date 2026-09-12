@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { Table } from '../ui/Table'
 import { TimeRangeSelector } from '../ui/TimeRangeSelector'
 import { Badge } from '../ui/Badge'
-import { Input } from '../ui/Input'
-import { Select } from '../ui/Select'
-import { Button } from '../ui/Button'
+import type { BadgeVariant } from '../ui/Badge'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { formatBytes, formatNumber } from '../utils/format'
+import { formatBytes } from '../utils/format'
 
 interface Alert {
   id: string
@@ -21,13 +19,6 @@ interface Alert {
   acknowledged_at?: string
 }
 
-interface AlertSummary {
-  total: number
-  critical: number
-  warning: number
-  info: number
-}
-
 interface WSMessage {
   type: string
   data: any
@@ -35,7 +26,6 @@ interface WSMessage {
 
 export function Alerts() {
   const [alerts, setAlerts] = useState<Alert[]>([])
-  const [summary, setSummary] = useState<AlertSummary>({ total: 0, critical: 0, warning: 0, info: 0 })
   const [timeRange, setTimeRange] = useState('-1h')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +41,6 @@ export function Alerts() {
         const message: WSMessage = JSON.parse(lastMessage.data)
         if (message.type === 'alert' && message.data) {
           setAlerts(prev => [message.data, ...prev.slice(0, 99)]) // Keep last 100
-          updateSummary()
         }
       } catch (e) {
         console.error('Failed to parse WS message:', e)
@@ -59,14 +48,14 @@ export function Alerts() {
     }
   }, [lastMessage])
 
-  const updateSummary = () => {
-    const newSummary = alerts.reduce((acc, alert) => {
+  // Summary derived from alerts (always in sync with current state)
+  const summary = useMemo(() => {
+    return alerts.reduce((acc, alert) => {
       acc.total++
       acc[alert.severity]++
       return acc
     }, { total: 0, critical: 0, warning: 0, info: 0 })
-    setSummary(newSummary)
-  }
+  }, [alerts])
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -77,7 +66,6 @@ export function Alerts() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setAlerts(data.alerts || [])
-      updateSummary()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch alerts')
     } finally {
@@ -87,7 +75,6 @@ export function Alerts() {
 
   useEffect(() => {
     fetchData()
-    updateSummary()
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
   }, [fetchData])
@@ -116,15 +103,14 @@ export function Alerts() {
       })
       if (res.ok) {
         setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, acknowledged: true, acknowledged_at: new Date().toISOString() } : a))
-        updateSummary()
       }
     } catch (err) {
       console.error('Failed to acknowledge alert:', err)
     }
   }
 
-  const severityColors = {
-    critical: { badge: 'danger', icon: '🔴', bg: 'bg-red-500/10 border-red-500/20' },
+  const severityColors: Record<Alert['severity'], { badge: BadgeVariant; icon: string; bg: string }> = {
+    critical: { badge: 'critical', icon: '🔴', bg: 'bg-red-500/10 border-red-500/20' },
     warning: { badge: 'warning', icon: '🟡', bg: 'bg-yellow-500/10 border-yellow-500/20' },
     info: { badge: 'info', icon: '🔵', bg: 'bg-blue-500/10 border-blue-500/20' },
   }
@@ -301,34 +287,36 @@ export function Alerts() {
               <p className="text-text-muted">All clear! No threshold violations detected.</p>
             </div>
           ) : (
-            <Table 
-              columns={columns} 
-              data={sortedAlerts} 
+            <Table
+              columns={columns}
+              data={sortedAlerts}
               striped
               hoverable
               onRowClick={(row) => setSelectedAlert(row)}
+              onHeaderClick={handleSort}
             />
           )}
         </CardContent>
       </Card>
 
       {selectedAlert && (
-        <AlertDetailModal 
-          alert={selectedAlert} 
-          onClose={() => setSelectedAlert(null)} 
+        <AlertDetailModal
+          alert={selectedAlert}
+          onClose={() => setSelectedAlert(null)}
+          onAcknowledge={acknowledgeAlert}
         />
       )}
     </div>
   )
 }
 
-function AlertDetailModal({ alert, onClose }: { alert: Alert; onClose: () => void }) {
+function AlertDetailModal({ alert, onClose, onAcknowledge }: { alert: Alert; onClose: () => void; onAcknowledge: (alert: Alert) => void }) {
   const severityColors = {
-    critical: { badge: 'danger', bg: 'bg-red-500/10 border-red-500/20 text-red-400' },
-    warning: { badge: 'warning', bg: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' },
-    info: { badge: 'info', bg: 'bg-blue-500/10 border-blue-500/20 text-blue-400' },
+    critical: { badge: 'critical' as BadgeVariant, bg: 'bg-red-500/10 border-red-500/20 text-red-400' },
+    warning: { badge: 'warning' as BadgeVariant, bg: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' },
+    info: { badge: 'info' as BadgeVariant, bg: 'bg-blue-500/10 border-blue-500/20 text-blue-400' },
   }
-  
+
   const colors = severityColors[alert.severity]
 
   return (
@@ -348,7 +336,7 @@ function AlertDetailModal({ alert, onClose }: { alert: Alert; onClose: () => voi
           </button>
         </div>
         <div className="p-6 space-y-4">
-          <div className={`p-4 rounded-lg border ${colors.bg.replace('bg-', '').replace('border-', '').split(' ')[0]}`}>
+          <div className={`p-4 rounded-lg border ${colors.bg}`}>
             <p className="font-medium">{alert.message}</p>
           </div>
           
@@ -395,9 +383,8 @@ function AlertDetailModal({ alert, onClose }: { alert: Alert; onClose: () => voi
           {!alert.acknowledged && (
             <button
               onClick={() => {
-                // TODO: Implement acknowledge API call
-                alert.acknowledged = true
-                alert.acknowledged_at = new Date().toISOString()
+                onAcknowledge(alert)
+                onClose()
               }}
               className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors"
             >
@@ -444,24 +431,6 @@ function InfoIcon() {
   return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 }
 
-function AlertCircleIcon() {
-  return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatNumber(num: number): string {
-  if (num === 0) return '0'
-  return new Intl.NumberFormat().format(num)
-}
-
-interface WSMessage {
-  type: string
-  data: any
+function AlertCircleIcon({ className = 'w-6 h-6' }: { className?: string }) {
+  return <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
 }

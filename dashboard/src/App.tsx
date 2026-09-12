@@ -1,10 +1,8 @@
-import { Routes, Route, Link, useLocation, NavLink } from 'react-router-dom'
-import { Layout, Dashboard, TopTalkers, ProtocolDistribution, GeoMap, Alerts, Settings } from './pages'
+import { Routes, Route, Link, NavLink } from 'react-router-dom'
+import { Dashboard, TopTalkers, ProtocolDistribution, GeoMap, Alerts, Settings } from './pages'
 import { useWebSocket } from './hooks/useWebSocket'
 
 function Navigation() {
-  const location = useLocation()
-  
   const navItems = [
     { path: '/', label: 'Dashboard', icon: 'LayoutDashboard' },
     { path: '/top-talkers', label: 'Top Talkers', icon: 'Users' },
