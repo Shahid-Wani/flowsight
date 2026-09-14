@@ -3,18 +3,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy and install Python dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e .
-
-# Copy application code
+# pyproject declares readme = "README.md" - it must be present before install
+COPY pyproject.toml README.md ./
 COPY flowsight/ ./flowsight/
-COPY config.yaml* ./
+
+# Sane default config; every value can be overridden via SECTION__FIELD env vars
+COPY config.example.yaml ./config.yaml
+
+RUN pip install --no-cache-dir .
 
 EXPOSE 8000
 

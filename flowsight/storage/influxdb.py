@@ -142,25 +142,34 @@ class InfluxDBStorage(StorageBackend):
     async def query_flows(
         self, start: str, stop: str, filters: dict[str, Any] | None = None, limit: int = 1000
     ) -> list[dict[str, Any]]:
-        """Query flow records from InfluxDB."""
+        """Query flow records from InfluxDB.
+
+        Returns one row per flow record: tags preserved as columns and
+        fields pivoted into columns (bytes, packets, ...). Filters are
+        applied before the limit so filtered queries are correct.
+        """
         if not self._connected:
             await self.connect()
+
+        filter_lines = ""
+        for key, value in (filters or {}).items():
+            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+            filter_lines += f'  |> filter(fn: (r) => r.{key} == "{escaped}")\n'
 
         flux_query = f"""
         from(bucket: "{settings.storage.bucket}")
           |> range(start: {start}, stop: {stop})
           |> filter(fn: (r) => r._measurement == "flow")
+        {filter_lines}  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+          |> group()
+          |> sort(columns: ["_time"], desc: false)
           |> limit(n: {limit})
         """
-
-        if filters:
-            for key, value in filters.items():
-                flux_query += f'  |> filter(fn: (r) => r.{key} == "{value}")\n'
 
         try:
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, self._query_flux, flux_query)
-            return result
+            return [_clean_flow_row(row) for row in result]
         except Exception as e:
             logger.exception("influxdb_query_failed", error=str(e))
             raise
@@ -248,3 +257,141 @@ class InfluxDBStorage(StorageBackend):
         except Exception as e:
             logger.exception("bandwidth_timeseries_query_failed", error=str(e))
             raise
+
+    async def get_geo_distribution(self, start: str, stop: str) -> list[dict[str, Any]]:
+        """Get traffic distribution by source/destination country.
+
+        Uses the ``src_country_code`` / ``dst_country_code`` tags written
+        by the enrichment pipeline.
+        """
+        if not self._connected:
+            await self.connect()
+
+        bucket = settings.storage.bucket
+        base_filter = 'r._measurement == "flow" and r._field == "bytes"'
+
+        # Per (country, source ip) sums: bytes + unique IP counts
+        sent_ip_query = f"""
+        from(bucket: "{bucket}")
+          |> range(start: {start}, stop: {stop})
+          |> filter(fn: (r) => {base_filter} and exists r.src_country_code)
+          |> group(columns: ["src_country_code", "src_ip"])
+          |> sum()
+        """
+        # Flow record counts per source country
+        flows_query = f"""
+        from(bucket: "{bucket}")
+          |> range(start: {start}, stop: {stop})
+          |> filter(fn: (r) => {base_filter} and exists r.src_country_code)
+          |> group(columns: ["src_country_code"])
+          |> count()
+        """
+        # Bytes received, per destination country
+        received_query = f"""
+        from(bucket: "{bucket}")
+          |> range(start: {start}, stop: {stop})
+          |> filter(fn: (r) => {base_filter} and exists r.dst_country_code)
+          |> group(columns: ["dst_country_code"])
+          |> sum()
+        """
+
+        try:
+            loop = asyncio.get_running_loop()
+            sent_rows, flow_rows, recv_rows = await asyncio.gather(
+                loop.run_in_executor(None, self._query_flux, sent_ip_query),
+                loop.run_in_executor(None, self._query_flux, flows_query),
+                loop.run_in_executor(None, self._query_flux, received_query),
+            )
+        except Exception as e:
+            logger.exception("geo_distribution_query_failed", error=str(e))
+            raise
+
+        sent = _aggregate_geo_sent(sent_rows)
+        flow_counts = {r.get("src_country_code"): r.get("_value") or 0 for r in flow_rows}
+        for row in sent:
+            row["flows"] = int(flow_counts.get(row["country_code"], 0))
+
+        received = [
+            {"country_code": r.get("dst_country_code"), "bytes": r.get("_value") or 0}
+            for r in recv_rows
+        ]
+        return _merge_geo_rows(sent, received)
+
+    async def flush(self) -> None:
+        """Flush pending batched writes (used by integration tests)."""
+        if self.write_api:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self.write_api.flush)
+
+
+def _clean_flow_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Drop Flux-internal columns from a pivoted flow row.
+
+    Keeps tags and pivoted field columns; renames ``_time`` to ``time``.
+    """
+    cleaned: dict[str, Any] = {}
+    for key, value in row.items():
+        if key in ("result", "table"):
+            continue
+        if key.startswith("_") and key != "_time":
+            continue
+        cleaned["time" if key == "_time" else key] = value
+    return cleaned
+
+
+def _aggregate_geo_sent(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fold per-(country, ip) sum rows into per-country bytes + unique IPs."""
+    per_country: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        code = row.get("src_country_code")
+        if not code:
+            continue
+        entry = per_country.setdefault(code, {"bytes": 0.0, "unique_ips": 0, "_ips": set()})
+        entry["bytes"] += row.get("_value") or 0
+        entry["_ips"].add(row.get("src_ip"))
+
+    return [
+        {"country_code": code, "bytes": entry["bytes"], "unique_ips": len(entry["_ips"])}
+        for code, entry in per_country.items()
+    ]
+
+
+def _merge_geo_rows(
+    sent: list[dict[str, Any]], received: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge per-country sent and received aggregates, sorted by total bytes."""
+    countries: dict[str, dict[str, Any]] = {}
+
+    for row in sent:
+        code = row.get("country_code")
+        if not code:
+            continue
+        countries[code] = {
+            "country_code": code,
+            "bytes_sent": row.get("bytes", 0),
+            "bytes_received": 0,
+            "flows": row.get("flows", 0),
+            "unique_ips": row.get("unique_ips", 0),
+        }
+
+    for row in received:
+        code = row.get("country_code")
+        if not code:
+            continue
+        entry = countries.setdefault(
+            code,
+            {
+                "country_code": code,
+                "bytes_sent": 0,
+                "bytes_received": 0,
+                "flows": 0,
+                "unique_ips": 0,
+            },
+        )
+        entry["bytes_received"] += row.get("bytes", 0)
+
+    return sorted(
+        countries.values(),
+        key=lambda c: c["bytes_sent"] + c["bytes_received"],
+        reverse=True,
+    )

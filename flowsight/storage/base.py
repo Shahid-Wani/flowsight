@@ -44,3 +44,7 @@ class StorageBackend(ABC):
         self, start: str, stop: str, interval: str = "1m"
     ) -> list[dict[str, Any]]:
         """Get bandwidth time series."""
+
+    @abstractmethod
+    async def get_geo_distribution(self, start: str, stop: str) -> list[dict[str, Any]]:
+        """Get traffic distribution by source/destination country."""

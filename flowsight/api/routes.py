@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from flowsight import get_logger
 from flowsight.alerting.manager import get_alert_manager
 from flowsight.alerting.threshold import AlertSeverity
+from flowsight.api.countries import country_info
 from flowsight.api.deps import get_storage
 
 logger = get_logger(__name__)
@@ -168,44 +169,27 @@ async def get_geo_map(
     stop: str = Query(..., description="Stop time"),
     storage_backend=Depends(get_storage),
 ):
-    """Get geographic distribution of traffic."""
+    """Get geographic distribution of traffic by country."""
     try:
-        # For now, return mock data structure
-        # In production, this would query InfluxDB for geo data
-        return {
-            "locations": [
+        rows = await storage_backend.get_geo_distribution(start, stop)
+
+        locations = []
+        for row in rows:
+            info = country_info(row["country_code"])
+            locations.append(
                 {
-                    "country_code": "US",
-                    "country_name": "United States",
-                    "latitude": 37.0902,
-                    "longitude": -95.7129,
-                    "bytes_sent": 1073741824,
-                    "bytes_received": 536870912,
-                    "flows": 15000,
-                    "unique_ips": 500
-                },
-                {
-                    "country_code": "CN",
-                    "country_name": "China",
-                    "latitude": 35.8617,
-                    "longitude": 104.1954,
-                    "bytes_sent": 536870912,
-                    "bytes_received": 268435456,
-                    "flows": 8000,
-                    "unique_ips": 200
-                },
-                {
-                    "country_code": "DE",
-                    "country_name": "Germany",
-                    "latitude": 51.1657,
-                    "longitude": 10.4515,
-                    "bytes_sent": 268435456,
-                    "bytes_received": 134217728,
-                    "flows": 5000,
-                    "unique_ips": 150
+                    "country_code": row["country_code"],
+                    "country_name": info["name"],
+                    "latitude": info["latitude"],
+                    "longitude": info["longitude"],
+                    "bytes_sent": row["bytes_sent"],
+                    "bytes_received": row["bytes_received"],
+                    "flows": row["flows"],
+                    "unique_ips": row["unique_ips"],
                 }
-            ]
-        }
+            )
+        locations.sort(key=lambda loc: loc["bytes_sent"] + loc["bytes_received"], reverse=True)
+        return {"locations": locations}
     except Exception as e:
         logger.exception("geo_map_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
