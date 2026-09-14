@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   influxdb:
     image: influxdb:2.7
@@ -30,17 +28,18 @@ services:
     ports:
       - "2055:2055/udp"
     environment:
-      - COLLECTOR_LISTEN=0.0.0.0:2055
-      - STORAGE_URL=http://influxdb:8086
-      - STORAGE_ORG=flowsight
-      - STORAGE_BUCKET=flows
-      - STORAGE_TOKEN=my-super-secret-admin-token
-      - LOGGING_LEVEL=INFO
+      # Settings use pydantic-settings env_nested_delimiter="__":
+      # overrides must use SECTION__FIELD form (flat forms are ignored).
+      - COLLECTOR__LISTEN=0.0.0.0:2055
+      - STORAGE__URL=http://influxdb:8086
+      - STORAGE__ORG=flowsight
+      - STORAGE__BUCKET=flows
+      - STORAGE__TOKEN=my-super-secret-admin-token
+      - LOGGING__LEVEL=INFO
     depends_on:
       influxdb:
         condition: service_healthy
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
       - ./data:/app/data:ro
 
   api:
@@ -51,19 +50,17 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
-      - STORAGE_URL=http://influxdb:8086
-      - STORAGE_ORG=flowsight
-      - STORAGE_BUCKET=flows
-      - STORAGE_TOKEN=my-super-secret-admin-token
-      - API_JWT_SECRET=change-me-in-production
-      - LOGGING_LEVEL=INFO
+      - API__HOST=0.0.0.0
+      - API__PORT=8000
+      - STORAGE__URL=http://influxdb:8086
+      - STORAGE__ORG=flowsight
+      - STORAGE__BUCKET=flows
+      - STORAGE__TOKEN=my-super-secret-admin-token
+      - API__JWT_SECRET=change-me-in-production
+      - LOGGING__LEVEL=INFO
     depends_on:
       influxdb:
         condition: service_healthy
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
 
   dashboard:
     build:
@@ -74,8 +71,6 @@ services:
       - "3000:80"
     depends_on:
       - api
-    environment:
-      - VITE_API_URL=http://localhost:8000
 
 volumes:
   influxdb-data:
