@@ -69,6 +69,23 @@ def test_load_config_function():
     ]
 
 
+def test_env_vars_use_double_underscore_form(monkeypatch):
+    """Nested settings must be overridable via SECTION__FIELD env vars.
+
+    docker-compose.yaml relies on this form (STORAGE__URL, API__JWT_SECRET,
+    ...) - flat forms like STORAGE_URL are silently ignored by
+    pydantic-settings env_nested_delimiter.
+    """
+    from flowsight.config import Settings
+
+    monkeypatch.setenv("STORAGE__TOKEN", "env-token-123")
+    monkeypatch.setenv("API__JWT_SECRET", "env-secret-456")
+
+    fresh = Settings()
+    assert fresh.storage.token == "env-token-123"
+    assert fresh.api.jwt_secret == "env-secret-456"
+
+
 def test_enrichment_cli_entrypoint():
     """flowsight-enrich console script target must exist."""
     from flowsight.enrichment.cli import main
