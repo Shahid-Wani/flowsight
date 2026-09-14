@@ -142,25 +142,34 @@ class InfluxDBStorage(StorageBackend):
     async def query_flows(
         self, start: str, stop: str, filters: dict[str, Any] | None = None, limit: int = 1000
     ) -> list[dict[str, Any]]:
-        """Query flow records from InfluxDB."""
+        """Query flow records from InfluxDB.
+
+        Returns one row per flow record: tags preserved as columns and
+        fields pivoted into columns (bytes, packets, ...). Filters are
+        applied before the limit so filtered queries are correct.
+        """
         if not self._connected:
             await self.connect()
+
+        filter_lines = ""
+        for key, value in (filters or {}).items():
+            escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+            filter_lines += f'  |> filter(fn: (r) => r.{key} == "{escaped}")\n'
 
         flux_query = f"""
         from(bucket: "{settings.storage.bucket}")
           |> range(start: {start}, stop: {stop})
           |> filter(fn: (r) => r._measurement == "flow")
+        {filter_lines}  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+          |> group()
+          |> sort(columns: ["_time"], desc: false)
           |> limit(n: {limit})
         """
-
-        if filters:
-            for key, value in filters.items():
-                flux_query += f'  |> filter(fn: (r) => r.{key} == "{value}")\n'
 
         try:
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, self._query_flux, flux_query)
-            return result
+            return [_clean_flow_row(row) for row in result]
         except Exception as e:
             logger.exception("influxdb_query_failed", error=str(e))
             raise
@@ -313,6 +322,21 @@ class InfluxDBStorage(StorageBackend):
         if self.write_api:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self.write_api.flush)
+
+
+def _clean_flow_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Drop Flux-internal columns from a pivoted flow row.
+
+    Keeps tags and pivoted field columns; renames ``_time`` to ``time``.
+    """
+    cleaned: dict[str, Any] = {}
+    for key, value in row.items():
+        if key in ("result", "table"):
+            continue
+        if key.startswith("_") and key != "_time":
+            continue
+        cleaned["time" if key == "_time" else key] = value
+    return cleaned
 
 
 def _aggregate_geo_sent(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -140,7 +140,11 @@ T0 = 1577836800  # 2020-01-01T00:00:00Z
 
 
 async def test_write_and_query_flows_round_trip(storage):
-    """Written flows must be queryable with filters."""
+    """Written flows must be queryable with filters, one row per flow.
+
+    Rows must be pivoted: fields as columns (bytes, packets) with tags
+    preserved - not one record per field.
+    """
     flows = [
         make_flow(T0, "10.0.0.1", "10.0.0.9", 1000),
         make_flow(T0 + 1, "10.0.0.2", "10.0.0.9", 2000),
@@ -151,10 +155,24 @@ async def test_write_and_query_flows_round_trip(storage):
     result = await storage.query_flows(_rfc3339(T0 - 1), _rfc3339(T0 + 60))
     assert len(result) == 3
 
+    # Pivoted row shape: fields and tags as columns, no Flux internals
+    first = result[0]
+    assert first["src_ip"] == "10.0.0.1"
+    assert first["bytes"] == 1000
+    assert first["packets"] == 2
+    assert "_field" not in first
+    assert "_value" not in first
+
     filtered = await storage.query_flows(
         _rfc3339(T0 - 1), _rfc3339(T0 + 60), filters={"src_ip": "10.0.0.1"}
     )
     assert len(filtered) == 2
+
+    # Limit applies after filtering
+    limited = await storage.query_flows(
+        _rfc3339(T0 - 1), _rfc3339(T0 + 60), filters={"src_ip": "10.0.0.1"}, limit=1
+    )
+    assert len(limited) == 1
 
 
 async def test_top_talkers(storage):
