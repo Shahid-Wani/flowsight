@@ -95,6 +95,7 @@ enable_error_code = ["ignore-without-code"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = ["integration: requires a reachable InfluxDB 2.x instance (CI provides one)"]
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]

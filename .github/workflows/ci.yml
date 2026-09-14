@@ -10,6 +10,57 @@ permissions:
   contents: read
 
 jobs:
+  docker:
+    name: Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f Dockerfile.api -t flowsight-api:ci .
+
+      - name: Build collector image
+        run: docker build -f Dockerfile.collector -t flowsight-collector:ci .
+
+  integration:
+    name: Integration (InfluxDB)
+    runs-on: ubuntu-latest
+    services:
+      influxdb:
+        image: influxdb:2.7
+        ports:
+          - 8086:8086
+        env:
+          DOCKER_INFLUXDB_INIT_MODE: setup
+          DOCKER_INFLUXDB_INIT_USERNAME: admin
+          DOCKER_INFLUXDB_INIT_PASSWORD: password
+          DOCKER_INFLUXDB_INIT_ORG: flowsight
+          DOCKER_INFLUXDB_INIT_BUCKET: flows
+          DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: my-super-secret-admin-token
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package
+        run: python -m pip install --upgrade pip && python -m pip install ".[test]"
+
+      - name: Wait for InfluxDB
+        run: |
+          timeout 90 bash -c 'until curl -fsS http://localhost:8086/health >/dev/null 2>&1; do sleep 2; done'
+
+      - name: Run integration tests
+        run: python -m pytest -m integration
+        env:
+          FLOWSIGHT_INFLUXDB_URL: http://localhost:8086
+          FLOWSIGHT_INFLUXDB_TOKEN: my-super-secret-admin-token
+
   dashboard:
     name: Dashboard build
     runs-on: ubuntu-latest
