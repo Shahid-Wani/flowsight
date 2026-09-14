@@ -22,20 +22,21 @@ Network Devices → Flow Collector → Processing Pipeline → InfluxDB
 ## Features
 
 - **Multi-format collector**: NetFlow v5/v9, IPFIX, sFlow
-- **Real-time dashboard**: Bandwidth, top talkers, geo-map, anomalies
-- **Anomaly detection**: Threshold, statistical (z-score), ML (IsolationForest)
-- **Threat intelligence**: AbuseIPDB, AlienVault OTX integration
-- **Alerting**: Email, Slack, Webhook, PagerDuty
-- **Multi-tenant**: Organizations, RBAC, data isolation
+- **Processing pipeline**: enrichment → storage → detection → alerting, failure-isolated per stage
+- **Real-time dashboard**: Bandwidth, top talkers, geo-map, alerts
+- **Anomaly detection**: Threshold rules, statistical (z-score); ML (IsolationForest) available via model training
+- **Enrichment**: GeoIP (MaxMind GeoLite2), ASN, threat intel (AbuseIPDB, AlienVault OTX)
+- **Alerting**: Log, Webhook, Email handlers
 
 ## Quick Start
 
 ```bash
-# Start with Docker Compose (includes InfluxDB)
+# Start with Docker Compose (includes InfluxDB + dashboard)
 docker compose up -d
 
 # Or run locally
 pip install -e .
+cp config.example.yaml config.yaml
 flowsight-collector --config config.yaml
 flowsight-api --config config.yaml
 ```
