@@ -38,10 +38,7 @@ def test_merge_geo_rows():
         {"country_code": "US", "bytes": 100, "flows": 10, "unique_ips": 3},
         {"country_code": "DE", "bytes": 50, "flows": 5, "unique_ips": 2},
     ]
-    received = [
-        {"country_code": "US", "bytes": 20},
-        {"country_code": "FR", "bytes": 500},
-    ]
+    received = [{"country_code": "US", "bytes": 20}, {"country_code": "FR", "bytes": 500}]
 
     merged = _merge_geo_rows(sent, received)
 

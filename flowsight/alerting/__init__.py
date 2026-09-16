@@ -9,12 +9,12 @@ from flowsight.alerting.manager import AlertHandler, AlertManager
 from flowsight.alerting.threshold import AlertSeverity, ThresholdAlertEngine, ThresholdRule
 
 __all__ = [
+    "AlertHandler",
+    "AlertManager",
+    "AlertSeverity",
+    "EmailHandler",
+    "LogHandler",
     "ThresholdAlertEngine",
     "ThresholdRule",
-    "AlertSeverity",
-    "AlertManager",
-    "AlertHandler",
-    "LogHandler",
     "WebhookHandler",
-    "EmailHandler",
 ]

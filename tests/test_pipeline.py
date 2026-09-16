@@ -110,9 +110,7 @@ async def test_pipeline_survives_enrichment_failure():
 
     storage = FakeStorage()
     pipeline = Pipeline(
-        storage=storage,
-        alert_manager=make_alert_manager(),
-        enrichment_manager=FailingEnrichment(),
+        storage=storage, alert_manager=make_alert_manager(), enrichment_manager=FailingEnrichment()
     )
     flows = [{"src_ip": "10.0.0.1", "bytes": 100, "packets": 1}]
 

@@ -6,6 +6,7 @@ Real-time WebSocket endpoints for live flow updates.
 
 import asyncio
 import json
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -62,7 +63,6 @@ class ConnectionManager:
             try:
                 if deps.storage and deps.storage._connected:
                     # Get latest bandwidth point
-                    from datetime import datetime, timedelta
 
                     stop = datetime.utcnow().isoformat()
                     start = (datetime.utcnow() - timedelta(seconds=30)).isoformat()

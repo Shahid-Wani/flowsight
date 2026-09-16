@@ -86,7 +86,7 @@ class NetFlowV5Parser:
                 end_time,
                 src_port,
                 dst_port,
-                pad1,
+                _pad1,
                 tcp_flags,
                 proto,
                 tos,
@@ -94,7 +94,7 @@ class NetFlowV5Parser:
                 dst_as,
                 src_mask,
                 dst_mask,
-                pad2,
+                _pad2,
             ) = flow_data
 
             # Convert IPs from network byte order

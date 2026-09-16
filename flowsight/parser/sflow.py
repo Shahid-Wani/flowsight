@@ -11,6 +11,7 @@ sFlow v5 datagram structure:
 - Counter samples (multiple)
 """
 
+import socket
 import struct
 from dataclasses import dataclass
 from typing import Any
@@ -21,7 +22,9 @@ logger = get_logger(__name__)
 
 # sFlow v5 constants
 SFLOW_VERSION = 5
-SFLOW_HEADER_SIZE = 24  # version(4) + agent_ip(4) + sub_agent_id(4) + sequence(4) + uptime(4) + samples(4)
+SFLOW_HEADER_SIZE = (
+    24  # version(4) + agent_ip(4) + sub_agent_id(4) + sequence(4) + uptime(4) + samples(4)
+)
 
 # Sample types
 FLOW_SAMPLE = 1
@@ -63,6 +66,7 @@ COUNTER_SAMPLE_RADIO_ANTENNA = 1005
 @dataclass
 class SFlowDatagram:
     """Parsed sFlow datagram."""
+
     version: int
     agent_ip: str
     sub_agent_id: int
@@ -105,7 +109,12 @@ class SFlowParser:
             if flow:
                 flows.append(flow)
 
-        logger.debug("sflow_parsed", source_ip=source_ip, flow_count=len(flows), sequence=datagram.sequence_number)
+        logger.debug(
+            "sflow_parsed",
+            source_ip=source_ip,
+            flow_count=len(flows),
+            sequence=datagram.sequence_number,
+        )
         return flows
 
     def _parse_datagram(self, data: bytes, source_ip: str, source_port: int) -> SFlowDatagram:
@@ -129,14 +138,14 @@ class SFlowParser:
             if offset + 8 > len(data):
                 break
 
-            sample_type, sample_length = struct.unpack("!II", data[offset:offset + 8])
+            sample_type, sample_length = struct.unpack("!II", data[offset : offset + 8])
             offset += 8
 
             if sample_length < 8:
                 logger.warning("sflow_invalid_sample_length", length=sample_length)
                 break
 
-            sample_data = data[offset:offset + sample_length - 8]
+            sample_data = data[offset : offset + sample_length - 8]
             offset += sample_length - 8
 
             # Align to 4-byte boundary
@@ -171,10 +180,17 @@ class SFlowParser:
         header_fmt = "!IIIIIIIII"
         header_size = struct.calcsize(header_fmt)
 
-        (sequence_number, source_id_type, source_id_index, sampling_rate,
-         sample_pool, drops, input_iface, output_iface, flow_records) = struct.unpack(
-            header_fmt, data[:header_size]
-        )
+        (
+            sequence_number,
+            source_id_type,
+            source_id_index,
+            sampling_rate,
+            sample_pool,
+            drops,
+            input_iface,
+            output_iface,
+            flow_records,
+        ) = struct.unpack(header_fmt, data[:header_size])
 
         offset = header_size
         records = []
@@ -183,10 +199,10 @@ class SFlowParser:
             if offset + 8 > len(data):
                 break
 
-            format_type, format_length = struct.unpack("!II", data[offset:offset + 8])
+            format_type, format_length = struct.unpack("!II", data[offset : offset + 8])
             offset += 8
 
-            record_data = data[offset:offset + format_length - 8]
+            record_data = data[offset : offset + format_length - 8]
             offset += format_length - 8
 
             # Align
@@ -220,8 +236,10 @@ class SFlowParser:
         if len(data) < 12:
             return {}
 
-        header_protocol, frame_length, stripped_bytes, header_length = struct.unpack("!IIII", data[:16])
-        header_bytes = data[16:16 + header_length]
+        header_protocol, frame_length, stripped_bytes, header_length = struct.unpack(
+            "!IIII", data[:16]
+        )
+        header_bytes = data[16 : 16 + header_length]
 
         return {
             "format": "raw_packet",
@@ -238,7 +256,7 @@ class SFlowParser:
             return {}
 
         eth_length = struct.unpack("!I", data[:4])[0]
-        eth_data = data[4:4 + eth_length]
+        eth_data = data[4 : 4 + eth_length]
 
         # Parse MAC addresses if present
         src_mac = dst_mac = ""
@@ -261,7 +279,8 @@ class SFlowParser:
         if len(data) < 20:
             return {}
 
-        # IPv4 header: version/ihl(1) tos(1) length(2) id(2) flags/frag(2) ttl(1) proto(1) checksum(2)
+        # IPv4 header: version/ihl(1) tos(1) length(2) id(2)
+        # flags/frag(2) ttl(1) proto(1) checksum(2)
         # src(4) dst(4)
         ihl = data[0] & 0x0F
         header_len = ihl * 4
@@ -279,7 +298,7 @@ class SFlowParser:
         dst_ip = struct.unpack("!I", data[16:20])[0]
 
         # Convert IPs
-        import socket
+
         src_ip_str = socket.inet_ntoa(struct.pack("!I", src_ip))
         dst_ip_str = socket.inet_ntoa(struct.pack("!I", dst_ip))
 
@@ -290,8 +309,8 @@ class SFlowParser:
             # TCP/UDP header starts at header_len
             transport_offset = header_len
             if len(data) >= transport_offset + 4:
-                src_port = struct.unpack("!H", data[transport_offset:transport_offset + 2])[0]
-                dst_port = struct.unpack("!H", data[transport_offset + 2:transport_offset + 4])[0]
+                src_port = struct.unpack("!H", data[transport_offset : transport_offset + 2])[0]
+                dst_port = struct.unpack("!H", data[transport_offset + 2 : transport_offset + 4])[0]
             if protocol == 6 and len(data) >= transport_offset + 13:
                 # TCP flags at offset 13
                 tcp_flags = data[transport_offset + 13]
@@ -317,7 +336,8 @@ class SFlowParser:
         if len(data) < 40:
             return {}
 
-        # IPv6 header: version/traffic_class/flow_label(4) payload_length(2) next_header(1) hop_limit(1)
+        # IPv6 header: version/traffic_class/flow_label(4)
+        # payload_length(2) next_header(1) hop_limit(1)
         # src(16) dst(16)
         version_tc_fl = struct.unpack("!I", data[:4])[0]
         traffic_class = (version_tc_fl >> 20) & 0xFF
@@ -327,7 +347,6 @@ class SFlowParser:
         next_header = data[6]
         hop_limit = data[7]
 
-        import socket
         src_ip = socket.inet_ntop(socket.AF_INET6, data[8:24])
         dst_ip = socket.inet_ntop(socket.AF_INET6, data[24:40])
 
@@ -338,15 +357,17 @@ class SFlowParser:
         nh = next_header
 
         # Simple parsing for TCP/UDP
-        while nh in (0, 43, 44, 50, 51, 60) and offset + 8 <= len(data):  # Hop-by-hop, Routing, Fragment, ESP, AH, Destination
+        while nh in (0, 43, 44, 50, 51, 60) and offset + 8 <= len(
+            data
+        ):  # Hop-by-hop, Routing, Fragment, ESP, AH, Destination
             next_nh = data[offset]
             ext_len = (data[offset + 1] + 1) * 8
             nh = next_nh
             offset += ext_len
 
         if nh in (6, 17) and offset + 4 <= len(data):  # TCP/UDP
-            src_port = struct.unpack("!H", data[offset:offset + 2])[0]
-            dst_port = struct.unpack("!H", data[offset + 2:offset + 4])[0]
+            src_port = struct.unpack("!H", data[offset : offset + 2])[0]
+            dst_port = struct.unpack("!H", data[offset + 2 : offset + 4])[0]
             if nh == 6 and offset + 13 < len(data):
                 tcp_flags = data[offset + 13]
 
@@ -366,10 +387,7 @@ class SFlowParser:
 
     def _parse_extended_flow(self, data: bytes, format_type: int) -> dict[str, Any]:
         """Parse extended flow formats (switch, router, gateway, etc.)."""
-        return {
-            "format": f"extended_{format_type}",
-            "data_length": len(data),
-        }
+        return {"format": f"extended_{format_type}", "data_length": len(data)}
 
     def _parse_counter_sample(self, data: bytes) -> dict[str, Any]:
         """Parse standard counter sample."""
@@ -381,10 +399,10 @@ class SFlowParser:
 
         counters = []
         while offset + 8 <= len(data):
-            counter_type, counter_length = struct.unpack("!II", data[offset:offset + 8])
+            counter_type, counter_length = struct.unpack("!II", data[offset : offset + 8])
             offset += 8
 
-            counter_data = data[offset:offset + counter_length - 8]
+            counter_data = data[offset : offset + counter_length - 8]
             offset += counter_length - 8
             offset = (offset + 3) & ~3
 
@@ -402,8 +420,7 @@ class SFlowParser:
         if len(data) < 12:
             return {}
 
-        sequence_number, source_id_type, source_id_index = struct.unpack("!III", data[:12])
-        # enterprise_id = struct.unpack("!I", data[12:16])[0]  # Next 4 bytes
+        _sequence_number, _source_id_type, _source_id_index = struct.unpack("!III", data[:12])
         # Same as flow sample but with enterprise
         return self._parse_flow_sample(data[12:])
 
@@ -417,49 +434,81 @@ class SFlowParser:
 
         if counter_type == COUNTER_SAMPLE_GENERIC and len(data) >= 72:
             # Generic interface counters
-            (if_index, if_type, if_speed, if_direction, if_status,
-             in_octets, in_unicast_pkts, in_multicast_pkts, in_broadcast_pkts,
-             in_discards, in_errors, in_unknown_protos,
-             out_octets, out_unicast_pkts, out_multicast_pkts, out_broadcast_pkts,
-             out_discards, out_errors, out_promiscuous) = struct.unpack("!IIIIIQQQQQQQQQQQQ", data[:144])
-            result.update({
-                "if_index": if_index,
-                "if_type": if_type,
-                "if_speed": if_speed,
-                "if_direction": if_direction,
-                "if_status": if_status,
-                "in_octets": in_octets,
-                "in_unicast_pkts": in_unicast_pkts,
-                "in_multicast_pkts": in_multicast_pkts,
-                "in_broadcast_pkts": in_broadcast_pkts,
-                "in_discards": in_discards,
-                "in_errors": in_errors,
-                "in_unknown_protos": in_unknown_protos,
-                "out_octets": out_octets,
-                "out_unicast_pkts": out_unicast_pkts,
-                "out_multicast_pkts": out_multicast_pkts,
-                "out_broadcast_pkts": out_broadcast_pkts,
-                "out_discards": out_discards,
-                "out_errors": out_errors,
-            })
+            (
+                if_index,
+                if_type,
+                if_speed,
+                if_direction,
+                if_status,
+                in_octets,
+                in_unicast_pkts,
+                in_multicast_pkts,
+                in_broadcast_pkts,
+                in_discards,
+                in_errors,
+                in_unknown_protos,
+                out_octets,
+                out_unicast_pkts,
+                out_multicast_pkts,
+                out_broadcast_pkts,
+                out_discards,
+                out_errors,
+                _out_promiscuous,
+            ) = struct.unpack("!IIIIIQQQQQQQQQQQQ", data[:144])
+            result.update(
+                {
+                    "if_index": if_index,
+                    "if_type": if_type,
+                    "if_speed": if_speed,
+                    "if_direction": if_direction,
+                    "if_status": if_status,
+                    "in_octets": in_octets,
+                    "in_unicast_pkts": in_unicast_pkts,
+                    "in_multicast_pkts": in_multicast_pkts,
+                    "in_broadcast_pkts": in_broadcast_pkts,
+                    "in_discards": in_discards,
+                    "in_errors": in_errors,
+                    "in_unknown_protos": in_unknown_protos,
+                    "out_octets": out_octets,
+                    "out_unicast_pkts": out_unicast_pkts,
+                    "out_multicast_pkts": out_multicast_pkts,
+                    "out_broadcast_pkts": out_broadcast_pkts,
+                    "out_discards": out_discards,
+                    "out_errors": out_errors,
+                }
+            )
         elif counter_type == COUNTER_SAMPLE_ETHERNET and len(data) >= 48:
-            (alignment_errors, fcs_errors, single_collision_frames,
-             multiple_collision_frames, sqe_test_errors, deferred_transmissions,
-             late_collisions, excessive_collisions, internal_mac_transmit_errors,
-             carrier_sense_errors, frame_too_long, frame_too_short,
-             internal_mac_receive_errors) = struct.unpack("!QQQQQQQQQQQQQ", data[:104])
-            result.update({
-                "alignment_errors": alignment_errors,
-                "fcs_errors": fcs_errors,
-                "single_collision_frames": single_collision_frames,
-                "multiple_collision_frames": multiple_collision_frames,
-                "late_collisions": late_collisions,
-                "excessive_collisions": excessive_collisions,
-            })
+            (
+                alignment_errors,
+                fcs_errors,
+                single_collision_frames,
+                multiple_collision_frames,
+                _sqe_test_errors,
+                _deferred_transmissions,
+                late_collisions,
+                excessive_collisions,
+                _internal_mac_transmit_errors,
+                _carrier_sense_errors,
+                _frame_too_long,
+                _frame_too_short,
+                _internal_mac_receive_errors,
+            ) = struct.unpack("!QQQQQQQQQQQQQ", data[:104])
+            result.update(
+                {
+                    "alignment_errors": alignment_errors,
+                    "fcs_errors": fcs_errors,
+                    "single_collision_frames": single_collision_frames,
+                    "multiple_collision_frames": multiple_collision_frames,
+                    "late_collisions": late_collisions,
+                    "excessive_collisions": excessive_collisions,
+                }
+            )
 
         return result
 
-    def _flow_sample_to_record(self, sample: dict[str, Any], datagram: SFlowDatagram) -> dict[str, Any] | None:
+    def _flow_sample_to_record(
+        self, sample: dict[str, Any], datagram: SFlowDatagram
+    ) -> dict[str, Any] | None:
         """Convert a flow sample to a flow record compatible with our storage."""
         if not sample.get("records"):
             return None
@@ -480,29 +529,33 @@ class SFlowParser:
 
         # Map record fields
         if record.get("format") in ("ipv4", "ipv6"):
-            flow.update({
-                "src_ip": record.get("src_ip"),
-                "dst_ip": record.get("dst_ip"),
-                "protocol": record.get("protocol"),
-                "src_port": record.get("src_port", 0),
-                "dst_port": record.get("dst_port", 0),
-                "tcp_flags": record.get("tcp_flags", 0),
-                "tos": record.get("tos", 0),
-                "ttl": record.get("ttl", 0),
-                "length": record.get("length", 0),
-            })
+            flow.update(
+                {
+                    "src_ip": record.get("src_ip"),
+                    "dst_ip": record.get("dst_ip"),
+                    "protocol": record.get("protocol"),
+                    "src_port": record.get("src_port", 0),
+                    "dst_port": record.get("dst_port", 0),
+                    "tcp_flags": record.get("tcp_flags", 0),
+                    "tos": record.get("tos", 0),
+                    "ttl": record.get("ttl", 0),
+                    "length": record.get("length", 0),
+                }
+            )
         elif record.get("format") == "ethernet":
-            flow.update({
-                "src_mac": record.get("src_mac"),
-                "dst_mac": record.get("dst_mac"),
-                "eth_protocol": record.get("eth_protocol", 0),
-            })
+            flow.update(
+                {
+                    "src_mac": record.get("src_mac"),
+                    "dst_mac": record.get("dst_mac"),
+                    "eth_protocol": record.get("eth_protocol", 0),
+                }
+            )
 
         return flow
 
     def _bytes_to_ip(self, addr: int) -> str:
         """Convert 32-bit integer to IP string."""
-        import socket
+
         return socket.inet_ntoa(struct.pack("!I", addr))
 
 

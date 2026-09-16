@@ -79,5 +79,5 @@ class LogContext:
             self.tokens.append((key, token))
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        for key, token in self.tokens:
+        for key, _token in self.tokens:
             structlog.contextvars.unbind_contextvars(key)

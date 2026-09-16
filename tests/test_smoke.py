@@ -111,7 +111,9 @@ def test_alert_handlers_registered_from_config():
     try:
         settings.alerting.handlers = [
             type(original[0])(type="log", level="info"),
-            type(original[0])(type="webhook", url="http://example.com/hook", headers={}, template="", level="info"),
+            type(original[0])(
+                type="webhook", url="http://example.com/hook", headers={}, template="", level="info"
+            ),
         ]
         import asyncio
 
