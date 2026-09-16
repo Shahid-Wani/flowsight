@@ -13,6 +13,7 @@ order or accumulated data.
 
 import asyncio
 import os
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -128,11 +129,9 @@ async def write_and_wait(instance: InfluxDBStorage, flows: list[dict[str, Any]],
 
 
 def _rfc3339(unix_secs: int) -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.fromtimestamp(unix_secs, tz=timezone.utc).isoformat().replace(
-        "+00:00", "Z"
-    )
+    return datetime.fromtimestamp(unix_secs, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
 # Each test gets its own minute in January 2020 to stay isolated.
@@ -209,12 +208,11 @@ async def test_protocol_distribution(storage):
 async def test_geo_distribution(storage):
     """Geo distribution must aggregate sent/received/flows/unique IPs per country."""
     flows = [
-        make_flow(T0 + 240, "1.1.1.1", "9.9.9.9", 100, src_country_code="US",
-                  dst_country_code="DE"),
-        make_flow(T0 + 241, "2.2.2.2", "8.8.8.8", 50, src_country_code="US",
-                  dst_country_code="US"),
-        make_flow(T0 + 242, "3.3.3.3", "7.7.7.7", 10, src_country_code="DE",
-                  dst_country_code="US"),
+        make_flow(
+            T0 + 240, "1.1.1.1", "9.9.9.9", 100, src_country_code="US", dst_country_code="DE"
+        ),
+        make_flow(T0 + 241, "2.2.2.2", "8.8.8.8", 50, src_country_code="US", dst_country_code="US"),
+        make_flow(T0 + 242, "3.3.3.3", "7.7.7.7", 10, src_country_code="DE", dst_country_code="US"),
     ]
     await write_and_wait(storage, flows, count=3)
 

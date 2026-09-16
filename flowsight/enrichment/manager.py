@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 @dataclass
 class EnrichmentConfig:
     """Configuration for enrichment pipeline."""
+
     geoip_enabled: bool = True
     asn_enabled: bool = True
     threat_intel_enabled: bool = True
@@ -53,10 +54,12 @@ class EnrichmentManager:
             self.threat_intel = ThreatIntelEnrichment()
 
         self._initialized = True
-        logger.info("enrichment_manager_initialized",
-                   geoip=self.config.geoip_enabled,
-                   asn=self.config.asn_enabled,
-                   threat_intel=self.config.threat_intel_enabled)
+        logger.info(
+            "enrichment_manager_initialized",
+            geoip=self.config.geoip_enabled,
+            asn=self.config.asn_enabled,
+            threat_intel=self.config.threat_intel_enabled,
+        )
 
     def enrich_flow_sync(self, flow: dict[str, Any]) -> dict[str, Any]:
         """Enrich a flow synchronously (GeoIP + ASN only)."""

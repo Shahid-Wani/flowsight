@@ -9,9 +9,4 @@ from flowsight.enrichment.geoip import GeoIPEnrichment
 from flowsight.enrichment.manager import EnrichmentManager
 from flowsight.enrichment.threat_intel import ThreatIntelEnrichment
 
-__all__ = [
-    "GeoIPEnrichment",
-    "ASNEnrichment",
-    "ThreatIntelEnrichment",
-    "EnrichmentManager",
-]
+__all__ = ["ASNEnrichment", "EnrichmentManager", "GeoIPEnrichment", "ThreatIntelEnrichment"]

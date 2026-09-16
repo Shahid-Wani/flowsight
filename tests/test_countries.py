@@ -38,7 +38,20 @@ def test_table_covers_major_traffic_countries():
     from flowsight.api.countries import COUNTRIES
 
     major_traffic = [
-        "US", "CN", "RU", "DE", "GB", "FR", "NL", "IN", "JP", "KR", "BR", "AU", "CA", "SG",
+        "US",
+        "CN",
+        "RU",
+        "DE",
+        "GB",
+        "FR",
+        "NL",
+        "IN",
+        "JP",
+        "KR",
+        "BR",
+        "AU",
+        "CA",
+        "SG",
     ]
     for code in major_traffic:
         assert code in COUNTRIES, f"{code} missing from country table"

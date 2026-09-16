@@ -89,10 +89,7 @@ async def test_collector_udp_end_to_end():
         )
     )
     collector = FlowCollector(
-        host="127.0.0.1",
-        port=0,
-        pipeline=make_pipeline(storage, alert_manager),
-        workers=1,
+        host="127.0.0.1", port=0, pipeline=make_pipeline(storage, alert_manager), workers=1
     )
     await collector.start()
 
@@ -127,7 +124,9 @@ async def test_collector_udp_end_to_end():
 async def test_collector_stop_does_not_hang_with_backlog():
     """stop() must return promptly even if packets remain queued."""
     storage = RecordingStorage()
-    collector = FlowCollector(host="127.0.0.1", port=0, pipeline=make_pipeline(storage, AlertManager()), workers=1)
+    collector = FlowCollector(
+        host="127.0.0.1", port=0, pipeline=make_pipeline(storage, AlertManager()), workers=1
+    )
     await collector.start()
 
     # Stop the workers from draining by stuffing the queue beyond what

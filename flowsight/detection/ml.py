@@ -19,10 +19,14 @@ from flowsight.config import settings
 
 logger = get_logger(__name__)
 
+MIN_TRAINING_SAMPLES = 10
+MIN_RETRAIN_BUFFER = 100
+
 
 @dataclass
 class MLDetectionResult:
     """Result of ML anomaly detection."""
+
     is_anomaly: bool
     score: float  # Anomaly score (negative = more anomalous)
     threshold: float
@@ -50,7 +54,12 @@ class MLAnomalyDetector:
         self.max_samples = max_samples
         self.random_state = random_state
         self.feature_fields = feature_fields or [
-            "bytes", "packets", "duration", "src_port", "dst_port", "protocol"
+            "bytes",
+            "packets",
+            "duration",
+            "src_port",
+            "dst_port",
+            "protocol",
         ]
         self.retrain_interval = retrain_interval
 
@@ -73,7 +82,9 @@ class MLAnomalyDetector:
                 self.model = data["model"]
                 self.scaler = data["scaler"]
                 self.feature_fields = data.get("feature_fields", self.feature_fields)
-                logger.info("ml_model_loaded", path=str(self.model_path), n_samples=data.get("n_samples", 0))
+                logger.info(
+                    "ml_model_loaded", path=str(self.model_path), n_samples=data.get("n_samples", 0)
+                )
             except Exception as e:
                 logger.warning("ml_model_load_failed", error=str(e), path=str(self.model_path))
                 self._init_new_model()
@@ -113,29 +124,29 @@ class MLAnomalyDetector:
             if features is not None:
                 feature_matrix.append(features.flatten())
 
-        if len(feature_matrix) < 10:  # Need minimum samples
+        if len(feature_matrix) < MIN_TRAINING_SAMPLES:  # Need minimum samples
             return None
 
         return np.array(feature_matrix)
 
     async def train(self, flows: list[dict[str, Any]]) -> bool:
         """Train the model on historical flows."""
-        X = self._prepare_training_data(flows)
-        if X is None or len(X) < 10:
-            logger.warning("ml_insufficient_training_data", count=len(X) if X is not None else 0)
+        x = self._prepare_training_data(flows)
+        if x is None or len(x) < MIN_TRAINING_SAMPLES:
+            logger.warning("ml_insufficient_training_data", count=len(x) if x is not None else 0)
             return False
 
         try:
             # Fit scaler
-            X_scaled = self.scaler.fit_transform(X)
+            x_scaled = self.scaler.fit_transform(x)
 
             # Train model
-            self.model.fit(X_scaled)
+            self.model.fit(x_scaled)
 
             # Save model
-            self._save_model(len(X))
+            self._save_model(len(x))
 
-            logger.info("ml_model_trained", n_samples=len(X), n_features=X.shape[1])
+            logger.info("ml_model_trained", n_samples=len(x), n_features=x.shape[1])
             return True
 
         except Exception as e:
@@ -151,16 +162,19 @@ class MLAnomalyDetector:
         self._training_buffer.append(features.flatten())
         self._samples_since_retrain += 1
 
-        if self._samples_since_retrain >= self.retrain_interval and len(self._training_buffer) >= 100:
+        if (
+            self._samples_since_retrain >= self.retrain_interval
+            and len(self._training_buffer) >= MIN_RETRAIN_BUFFER
+        ):
             # Retrain with buffer data
-            X = np.array(self._training_buffer)
+            x = np.array(self._training_buffer)
             try:
-                X_scaled = self.scaler.fit_transform(X)
-                self.model.fit(X_scaled)
-                self._save_model(len(X))
+                x_scaled = self.scaler.fit_transform(x)
+                self.model.fit(x_scaled)
+                self._save_model(len(x))
                 self._training_buffer.clear()
                 self._samples_since_retrain = 0
-                logger.info("ml_model_retrained", n_samples=len(X))
+                logger.info("ml_model_retrained", n_samples=len(x))
                 return True
             except Exception as e:
                 logger.exception("ml_incremental_retrain_failed", error=str(e))
@@ -170,14 +184,17 @@ class MLAnomalyDetector:
     def _save_model(self, n_samples: int):
         """Save model to disk."""
         self.model_path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump({
-            "model": self.model,
-            "scaler": self.scaler,
-            "feature_fields": self.feature_fields,
-            "n_samples": n_samples,
-            "contamination": self.contamination,
-            "n_estimators": self.n_estimators,
-        }, self.model_path)
+        joblib.dump(
+            {
+                "model": self.model,
+                "scaler": self.scaler,
+                "feature_fields": self.feature_fields,
+                "n_samples": n_samples,
+                "contamination": self.contamination,
+                "n_estimators": self.n_estimators,
+            },
+            self.model_path,
+        )
         logger.debug("ml_model_saved", path=str(self.model_path))
 
     async def detect(self, flow: dict[str, Any]) -> MLDetectionResult | None:
@@ -203,11 +220,10 @@ class MLAnomalyDetector:
                 is_anomaly=is_anomaly,
                 score=float(score),
                 threshold=self.contamination,
-                features={field: float(features[0, i]) for i, field in enumerate(self.feature_fields)},
-                metadata={
-                    "model_type": "IsolationForest",
-                    "contamination": self.contamination,
+                features={
+                    field: float(features[0, i]) for i, field in enumerate(self.feature_fields)
                 },
+                metadata={"model_type": "IsolationForest", "contamination": self.contamination},
             )
 
             if is_anomaly:
@@ -245,20 +261,20 @@ class MLAnomalyDetector:
         if not feature_matrix:
             return [None] * len(flows)
 
-        X = np.array(feature_matrix)
+        x = np.array(feature_matrix)
 
         try:
-            X_scaled = self.scaler.transform(X)
-            predictions = self.model.predict(X_scaled)
-            scores = self.model.score_samples(X_scaled)
+            x_scaled = self.scaler.transform(x)
+            predictions = self.model.predict(x_scaled)
+            scores = self.model.score_samples(x_scaled)
 
             results = [None] * len(flows)
-            for idx, (pred, score) in enumerate(zip(predictions, scores)):
+            for idx, (pred, score) in enumerate(zip(predictions, scores, strict=False)):
                 flow_idx = valid_indices[idx]
                 is_anomaly = pred == -1
 
                 features_dict = {
-                    field: float(X[idx, i]) for i, field in enumerate(self.feature_fields)
+                    field: float(x[idx, i]) for i, field in enumerate(self.feature_fields)
                 }
 
                 results[flow_idx] = MLDetectionResult(
@@ -266,10 +282,7 @@ class MLAnomalyDetector:
                     score=float(score),
                     threshold=self.contamination,
                     features=features_dict,
-                    metadata={
-                        "model_type": "IsolationForest",
-                        "contamination": self.contamination,
-                    },
+                    metadata={"model_type": "IsolationForest", "contamination": self.contamination},
                 )
 
                 if is_anomaly:
@@ -295,7 +308,7 @@ class MLAnomalyDetector:
         return {
             "model_type": "IsolationForest",
             "model_loaded": self.model is not None,
-            "scaler_fitted": self.scaler is not None and hasattr(self.scaler, 'mean_'),
+            "scaler_fitted": self.scaler is not None and hasattr(self.scaler, "mean_"),
             "contamination": self.contamination,
             "n_estimators": self.n_estimators,
             "feature_fields": self.feature_fields,
@@ -311,7 +324,4 @@ def create_default_ml_detector() -> MLAnomalyDetector | None:
     if not settings.detection.ml.enabled:
         return None
 
-    return MLAnomalyDetector(
-        model_path=settings.detection.ml.model_path,
-        contamination=0.01,
-    )
+    return MLAnomalyDetector(model_path=settings.detection.ml.model_path, contamination=0.01)

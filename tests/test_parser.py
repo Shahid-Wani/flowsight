@@ -97,8 +97,8 @@ class TestNetFlowV5Parser:
 
         flows = []
         for i in range(2):
-            src_ip = socket.inet_aton(f"192.168.1.{i+1}")
-            dst_ip = socket.inet_aton(f"10.0.0.{i+1}")
+            src_ip = socket.inet_aton(f"192.168.1.{i + 1}")
+            dst_ip = socket.inet_aton(f"10.0.0.{i + 1}")
             next_hop = socket.inet_aton("192.168.1.254")
 
             flow = struct.pack(
@@ -106,7 +106,23 @@ class TestNetFlowV5Parser:
                 int.from_bytes(src_ip, "big"),
                 int.from_bytes(dst_ip, "big"),
                 int.from_bytes(next_hop, "big"),
-                1, 2, 100, 10000, 100, 200, 12345, 80, 0, 0x10, 6, 0, 100, 200, 24, 24, 0
+                1,
+                2,
+                100,
+                10000,
+                100,
+                200,
+                12345,
+                80,
+                0,
+                0x10,
+                6,
+                0,
+                100,
+                200,
+                24,
+                24,
+                0,
             )
             flows.append(flow)
 
@@ -130,7 +146,23 @@ class TestNetFlowV5Parser:
             int.from_bytes(src_ip, "big"),
             int.from_bytes(dst_ip, "big"),
             int.from_bytes(next_hop, "big"),
-            1, 2, 100, 10000, 100, 200, 12345, 80, 0, 0x10, 6, 0, 100, 200, 24, 24, 0
+            1,
+            2,
+            100,
+            10000,
+            100,
+            200,
+            12345,
+            80,
+            0,
+            0x10,
+            6,
+            0,
+            100,
+            200,
+            24,
+            24,
+            0,
         )
 
         data = header + flow
@@ -227,7 +259,8 @@ class TestSFlowParser:
 
     def test_parse_minimal_sflow_datagram(self):
         """Test parsing minimal sFlow datagram with no samples."""
-        # sFlow v5 header: version=5, agent_ip=192.168.1.1, sub_agent_id=0, sequence=0, uptime=0, samples=0
+        # sFlow v5 header: version=5, agent_ip=192.168.1.1, sub_agent_id=0,
+        # sequence=0, uptime=0, samples=0
         agent_ip = struct.unpack("!I", socket.inet_aton("192.168.1.1"))[0]
         header = struct.pack("!IIIIII", 5, agent_ip, 0, 0, 0, 0)
         parser = SFlowParser()
@@ -245,6 +278,7 @@ class TestConfig:
     def test_settings_load(self):
         """Test settings can be instantiated."""
         from flowsight.config import Settings
+
         settings = Settings()
         assert settings.collector.listen == "0.0.0.0:2055"
         assert settings.storage.type == "influxdb"
@@ -252,6 +286,7 @@ class TestConfig:
     def test_collector_config(self):
         """Test collector config defaults."""
         from flowsight.config import CollectorConfig
+
         config = CollectorConfig()
         assert config.listen == "0.0.0.0:2055"
         assert "netflow_v5" in config.protocols
@@ -259,6 +294,7 @@ class TestConfig:
     def test_storage_config(self):
         """Test storage config defaults."""
         from flowsight.config import StorageConfig
+
         config = StorageConfig()
         assert config.type == "influxdb"
         assert config.url == "http://localhost:8086"
@@ -270,12 +306,14 @@ class TestLogging:
     def test_get_logger(self):
         """Test logger creation."""
         from flowsight.logging import get_logger
+
         logger = get_logger("test")
         assert logger is not None
 
     def test_log_context(self):
         """Test log context manager."""
         from flowsight.logging import LogContext
+
         with LogContext(key="value"):
             pass  # Should not raise
 
@@ -286,25 +324,31 @@ class TestEnrichment:
     def test_geoip_enrichment_init(self):
         """Test GeoIP enrichment initialization."""
         from flowsight.enrichment.geoip import GeoIPEnrichment
+
         enricher = GeoIPEnrichment()
         assert enricher is not None
 
     def test_asn_enrichment_init(self):
         """Test ASN enrichment initialization."""
         from flowsight.enrichment.asn import ASNEnrichment
+
         enricher = ASNEnrichment()
         assert enricher is not None
 
     def test_threat_intel_enrichment_init(self):
         """Test threat intel enrichment initialization."""
         from flowsight.enrichment.threat_intel import ThreatIntelEnrichment
+
         enricher = ThreatIntelEnrichment()
         assert enricher is not None
 
     def test_enrichment_manager_init(self):
         """Test enrichment manager initialization."""
         from flowsight.enrichment.manager import EnrichmentConfig, EnrichmentManager
-        config = EnrichmentConfig(geoip_enabled=False, asn_enabled=False, threat_intel_enabled=False)
+
+        config = EnrichmentConfig(
+            geoip_enabled=False, asn_enabled=False, threat_intel_enabled=False
+        )
         manager = EnrichmentManager(config)
         assert manager is not None
 
@@ -315,6 +359,7 @@ class TestAlerting:
     def test_threshold_rule_creation(self):
         """Test threshold rule creation."""
         from flowsight.alerting.threshold import AlertSeverity, ThresholdRule
+
         rule = ThresholdRule(
             name="test_rule",
             field="bytes",
@@ -358,12 +403,14 @@ class TestAlerting:
     def test_threshold_alert_engine_init(self):
         """Test threshold alert engine initialization."""
         from flowsight.alerting.threshold import ThresholdAlertEngine
+
         engine = ThresholdAlertEngine()
         assert engine is not None
 
     def test_alert_engine_add_rule(self):
         """Test adding rules to alert engine."""
         from flowsight.alerting.threshold import AlertSeverity, ThresholdAlertEngine, ThresholdRule
+
         engine = ThresholdAlertEngine()
         rule = ThresholdRule(
             name="test_rule",
@@ -378,6 +425,7 @@ class TestAlerting:
     def test_alert_engine_evaluate(self):
         """Test evaluating flows against rules."""
         from flowsight.alerting.threshold import AlertSeverity, ThresholdAlertEngine, ThresholdRule
+
         engine = ThresholdAlertEngine()
         rule = ThresholdRule(
             name="high_bytes",
@@ -402,6 +450,7 @@ class TestAlerting:
     def test_alert_manager_init(self):
         """Test alert manager initialization."""
         from flowsight.alerting.manager import AlertManager
+
         manager = AlertManager()
         assert manager is not None
 
@@ -409,6 +458,7 @@ class TestAlerting:
         """Test log handler initialization."""
         from flowsight.alerting.handlers import LogHandler
         from flowsight.alerting.threshold import AlertSeverity
+
         handler = LogHandler(severity_filter=[AlertSeverity.WARNING, AlertSeverity.CRITICAL])
         assert handler.name == "log"
         assert AlertSeverity.WARNING in handler.severity_filter
@@ -417,9 +467,9 @@ class TestAlerting:
         """Test webhook handler initialization."""
         from flowsight.alerting.handlers import WebhookHandler
         from flowsight.alerting.threshold import AlertSeverity
+
         handler = WebhookHandler(
-            url="https://example.com/webhook",
-            severity_filter=[AlertSeverity.CRITICAL],
+            url="https://example.com/webhook", severity_filter=[AlertSeverity.CRITICAL]
         )
         assert handler.name == "webhook"
         assert handler.url == "https://example.com/webhook"
@@ -431,6 +481,7 @@ class TestDetection:
     def test_statistical_detector_init(self):
         """Test statistical anomaly detector initialization."""
         from flowsight.detection.statistical import StatisticalAnomalyDetector
+
         detector = StatisticalAnomalyDetector()
         assert detector is not None
 
@@ -454,5 +505,6 @@ class TestDetection:
     def test_ml_detector_init(self):
         """Test ML anomaly detector initialization."""
         from flowsight.detection.ml import MLAnomalyDetector
+
         detector = MLAnomalyDetector()
         assert detector is not None

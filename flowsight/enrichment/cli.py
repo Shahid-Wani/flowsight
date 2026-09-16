@@ -37,7 +37,9 @@ async def run_enrichment(flows: list[dict]) -> list[dict]:
     help="JSON file of flow records (e.g. demo-flows.json from scripts/generate_demo_data.py)",
 )
 @click.option("--flow", "flow_json", help="Single flow record as a JSON string")
-@click.option("--output", "-o", type=click.Path(path_type=str), help="Write enriched records to a JSON file")
+@click.option(
+    "--output", "-o", type=click.Path(path_type=str), help="Write enriched records to a JSON file"
+)
 @click.option("--debug/--no-debug", default=False, help="Enable debug logging")
 def main(
     config: str | None,

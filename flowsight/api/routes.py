@@ -4,6 +4,7 @@ FlowSight API Routes
 REST API endpoints for flow data queries and alerting.
 """
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -15,6 +16,7 @@ from flowsight.alerting.manager import get_alert_manager
 from flowsight.alerting.threshold import AlertSeverity
 from flowsight.api.countries import country_info
 from flowsight.api.deps import get_storage
+from flowsight.api.protocols import protocol_name
 
 logger = get_logger(__name__)
 
@@ -110,9 +112,11 @@ async def query_flows(
 
         flows = await storage_backend.query_flows(start, stop, filters, limit)
         return FlowResponse(flows=flows, count=len(flows))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("query_flows_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/top-talkers", response_model=TopTalkersResponse)
@@ -127,9 +131,11 @@ async def get_top_talkers(
     try:
         talkers = await storage_backend.get_top_talkers(start, stop, limit, by)
         return TopTalkersResponse(talkers=talkers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("top_talkers_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/bandwidth", response_model=BandwidthResponse)
@@ -143,9 +149,11 @@ async def get_bandwidth(
     try:
         series = await storage_backend.get_bandwidth_timeseries(start, stop, interval)
         return BandwidthResponse(series=series)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("bandwidth_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/protocols", response_model=ProtocolDistributionResponse)
@@ -157,10 +165,16 @@ async def get_protocol_distribution(
     """Get protocol distribution."""
     try:
         distribution = await storage_backend.get_protocol_distribution(start, stop)
-        return ProtocolDistributionResponse(distribution=distribution)
+        return ProtocolDistributionResponse(
+            distribution=[
+                {**row, "protocol": protocol_name(row.get("protocol"))} for row in distribution
+            ]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("protocol_distribution_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/geo-map")
@@ -190,9 +204,11 @@ async def get_geo_map(
             )
         locations.sort(key=lambda loc: loc["bytes_sent"] + loc["bytes_received"], reverse=True)
         return {"locations": locations}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("geo_map_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/stats/summary")
@@ -204,7 +220,6 @@ async def get_summary(
     """Get summary statistics for a time range."""
     try:
         # Get multiple stats in parallel
-        import asyncio
 
         bandwidth_task = storage_backend.get_bandwidth_timeseries(start, stop, "1m")
         talkers_task = storage_backend.get_top_talkers(start, stop, 5, "bytes")
@@ -225,9 +240,11 @@ async def get_summary(
             "protocol_distribution": protocols,
             "bandwidth_series": bandwidth,
         }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("summary_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Alert endpoints
@@ -253,7 +270,7 @@ async def get_alerts(
 
         alert_responses = [
             AlertResponse(
-                id=str(i),
+                id=a.id,
                 rule_name=a.rule_name,
                 severity=a.severity,
                 message=a.message,
@@ -263,13 +280,13 @@ async def get_alerts(
                 acknowledged_by=a.acknowledged_by,
                 acknowledged_at=a.acknowledged_at.isoformat() if a.acknowledged_at else None,
             )
-            for i, a in enumerate(filtered)
+            for a in filtered
         ]
 
         return AlertsResponse(alerts=alert_responses, total=len(alert_responses))
     except Exception as e:
         logger.exception("get_alerts_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/alerts/summary", response_model=AlertSummaryResponse)
@@ -286,21 +303,15 @@ async def get_alert_summary():
         )
     except Exception as e:
         logger.exception("alert_summary_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/alerts/{alert_id}/acknowledge", response_model=AcknowledgeResponse)
 async def acknowledge_alert(alert_id: str, acknowledged_by: str = "api-user"):
-    """Acknowledge an alert."""
+    """Acknowledge an alert by its stable id."""
     try:
         manager = await get_alert_manager()
-        # Convert alert_id to index
-        try:
-            idx = int(alert_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid alert ID")
-
-        success = manager.acknowledge_alert(idx, acknowledged_by)
+        success = manager.acknowledge_alert(alert_id, acknowledged_by)
         if not success:
             raise HTTPException(status_code=404, detail="Alert not found")
 
@@ -309,4 +320,4 @@ async def acknowledge_alert(alert_id: str, acknowledged_by: str = "api-user"):
         raise
     except Exception as e:
         logger.exception("acknowledge_alert_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

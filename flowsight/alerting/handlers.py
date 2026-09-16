@@ -4,6 +4,7 @@ Alert Handlers
 Built-in handlers for alert notifications: log, webhook, email.
 """
 
+import asyncio
 import json
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -48,6 +49,7 @@ class LogHandler(AlertHandler):
 
 class WebhookHandler(AlertHandler):
     """Send alerts to a webhook URL."""
+
     url: str
     headers: dict[str, str] | None = None
     template: str | None = None
@@ -78,9 +80,16 @@ class WebhookHandler(AlertHandler):
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(self.url, json=payload, headers=self.headers)
                 response.raise_for_status()
-                logger.debug("webhook_alert_sent", url=self.url, rule=alert.rule_name, status=response.status_code)
+                logger.debug(
+                    "webhook_alert_sent",
+                    url=self.url,
+                    rule=alert.rule_name,
+                    status=response.status_code,
+                )
         except httpx.HTTPStatusError as e:
-            logger.warning("webhook_alert_failed", url=self.url, status=e.response.status_code, error=str(e))
+            logger.warning(
+                "webhook_alert_failed", url=self.url, status=e.response.status_code, error=str(e)
+            )
         except Exception as e:
             logger.exception("webhook_alert_error", url=self.url, error=str(e))
 
@@ -89,16 +98,18 @@ class WebhookHandler(AlertHandler):
         if self.template:
             # Use custom template
             try:
-                return json.loads(self.template.format(
-                    rule=alert.rule_name,
-                    severity=alert.severity.value,
-                    message=alert.message,
-                    timestamp=alert.timestamp.isoformat(),
-                    src_ip=alert.flow_data.get("src_ip", ""),
-                    dst_ip=alert.flow_data.get("dst_ip", ""),
-                    bytes=alert.flow_data.get("bytes", 0),
-                    packets=alert.flow_data.get("packets", 0),
-                ))
+                return json.loads(
+                    self.template.format(
+                        rule=alert.rule_name,
+                        severity=alert.severity.value,
+                        message=alert.message,
+                        timestamp=alert.timestamp.isoformat(),
+                        src_ip=alert.flow_data.get("src_ip", ""),
+                        dst_ip=alert.flow_data.get("dst_ip", ""),
+                        bytes=alert.flow_data.get("bytes", 0),
+                        packets=alert.flow_data.get("packets", 0),
+                    )
+                )
             except Exception:
                 pass
 
@@ -127,6 +138,7 @@ class WebhookHandler(AlertHandler):
 
 class EmailHandler(AlertHandler):
     """Send alerts via email (SMTP)."""
+
     smtp_host: str
     smtp_port: int
     username: str
@@ -171,7 +183,7 @@ class EmailHandler(AlertHandler):
 
         try:
             # Run SMTP in thread pool since smtplib is synchronous
-            import asyncio
+
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self._send_email, msg)
             logger.info("email_alert_sent", rule=alert.rule_name, to=self.to_emails)
@@ -188,11 +200,7 @@ class EmailHandler(AlertHandler):
 
     def _format_email_body(self, alert: Alert) -> str:
         """Format alert as HTML email."""
-        severity_colors = {
-            "critical": "#dc3545",
-            "warning": "#ffc107",
-            "info": "#17a2b8",
-        }
+        severity_colors = {"critical": "#dc3545", "warning": "#ffc107", "info": "#17a2b8"}
         color = severity_colors.get(alert.severity.value, "#6c757d")
 
         return f"""
@@ -208,13 +216,13 @@ class EmailHandler(AlertHandler):
                 <hr>
                 <h3>Flow Details</h3>
                 <table style="width: 100%; border-collapse: collapse;">
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Source IP</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get('src_ip', 'N/A')}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Destination IP</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get('dst_ip', 'N/A')}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Source Port</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get('src_port', 'N/A')}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Destination Port</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get('dst_port', 'N/A')}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Protocol</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get('protocol', 'N/A')}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Bytes</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get('bytes', 'N/A'):,}</td></tr>
-                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Packets</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get('packets', 'N/A'):,}</td></tr>
+                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Source IP</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get("src_ip", "N/A")}</td></tr>
+                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Destination IP</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get("dst_ip", "N/A")}</td></tr>
+                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Source Port</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get("src_port", "N/A")}</td></tr>
+                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Destination Port</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get("dst_port", "N/A")}</td></tr>
+                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Protocol</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get("protocol", "N/A")}</td></tr>
+                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Bytes</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get("bytes", "N/A"):,}</td></tr>
+                    <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Packets</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">{alert.flow_data.get("packets", "N/A"):,}</td></tr>
                 </table>
             </div>
             <div style="padding: 20px; text-align: center; color: #666; font-size: 12px;">

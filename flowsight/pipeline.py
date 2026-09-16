@@ -71,9 +71,7 @@ class Pipeline:
             enrichment_manager = await get_enrichment_manager()
 
         return cls(
-            storage=storage,
-            alert_manager=alert_manager,
-            enrichment_manager=enrichment_manager,
+            storage=storage, alert_manager=alert_manager, enrichment_manager=enrichment_manager
         )
 
     async def stop(self) -> None:
@@ -132,9 +130,7 @@ class Pipeline:
             anomaly_count = sum(1 for batch in results for r in batch if r.is_anomaly)
             if anomaly_count:
                 logger.warning(
-                    "pipeline_anomalies_detected",
-                    count=anomaly_count,
-                    flow_count=len(flows),
+                    "pipeline_anomalies_detected", count=anomaly_count, flow_count=len(flows)
                 )
         except Exception as e:
             logger.exception("pipeline_detection_failed", error=str(e))

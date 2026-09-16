@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 @dataclass
 class DetectionResult:
     """Result of anomaly detection."""
+
     is_anomaly: bool
     score: float
     threshold: float
@@ -67,7 +68,7 @@ class StatisticalAnomalyDetector:
                         self._windows[field].append(val)
                         # Trim window
                         if len(self._windows[field]) > self.window_size:
-                            self._windows[field] = self._windows[field][-self.window_size:]
+                            self._windows[field] = self._windows[field][-self.window_size :]
                     except (ValueError, TypeError):
                         pass
             self._cache_dirty = True
@@ -83,7 +84,7 @@ class StatisticalAnomalyDetector:
                             val = float(value)
                             self._windows[field].append(val)
                             if len(self._windows[field]) > self.window_size:
-                                self._windows[field] = self._windows[field][-self.window_size:]
+                                self._windows[field] = self._windows[field][-self.window_size :]
                         except (ValueError, TypeError):
                             pass
             self._cache_dirty = True
@@ -149,10 +150,7 @@ class StatisticalAnomalyDetector:
                     mean=mean,
                     std=std,
                     z_score=z_score,
-                    metadata={
-                        "window_size": len(self._windows[field]),
-                        "rule": f"zscore_{field}",
-                    },
+                    metadata={"window_size": len(self._windows[field]), "rule": f"zscore_{field}"},
                 )
                 results.append(result)
 
@@ -170,7 +168,7 @@ class StatisticalAnomalyDetector:
                 # Add this sample to window for next detection
                 self._windows[field].append(val)
                 if len(self._windows[field]) > self.window_size:
-                    self._windows[field] = self._windows[field][-self.window_size:]
+                    self._windows[field] = self._windows[field][-self.window_size :]
                 self._cache_dirty = True
 
             return results
@@ -224,7 +222,7 @@ class StatisticalAnomalyDetector:
                     # Update window for next detection
                     self._windows[field].append(val)
                     if len(self._windows[field]) > self.window_size:
-                        self._windows[field] = self._windows[field][-self.window_size:]
+                        self._windows[field] = self._windows[field][-self.window_size :]
 
                 if results:
                     self._cache_dirty = True
@@ -240,9 +238,7 @@ class StatisticalAnomalyDetector:
             "z_threshold": self.z_threshold,
             "min_samples": self.min_samples,
             "fields": self.fields,
-            "samples_per_field": {
-                field: len(values) for field, values in self._windows.items()
-            },
+            "samples_per_field": {field: len(values) for field, values in self._windows.items()},
             "cached_stats": {
                 field: {"mean": stats[0], "std": stats[1]}
                 for field, stats in self._stats_cache.items()

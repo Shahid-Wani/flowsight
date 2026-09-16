@@ -12,13 +12,18 @@ import httpx
 
 from flowsight import get_logger
 from flowsight.config import settings
+from flowsight.enrichment.cache import TTLCache
 
 logger = get_logger(__name__)
+
+ABUSE_MALICIOUS_THRESHOLD = 25
+HTTP_TOO_MANY_REQUESTS = 429
 
 
 @dataclass
 class ThreatIntelInfo:
     """Threat intelligence lookup result."""
+
     is_malicious: bool = False
     abuse_confidence_score: int | None = None
     country_code: str | None = None
@@ -51,11 +56,7 @@ class AbuseIPDBClient:
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                headers={
-                    "Key": self.api_key,
-                    "Accept": "application/json",
-                },
-                timeout=self.timeout,
+                headers={"Key": self.api_key, "Accept": "application/json"}, timeout=self.timeout
             )
         return self._client
 
@@ -68,17 +69,13 @@ class AbuseIPDBClient:
             client = await self._get_client()
             response = await client.get(
                 f"{self.BASE_URL}/check",
-                params={
-                    "ipAddress": ip,
-                    "maxAgeInDays": max_age,
-                    "verbose": "true",
-                },
+                params={"ipAddress": ip, "maxAgeInDays": max_age, "verbose": "true"},
             )
             response.raise_for_status()
             data = response.json()["data"]
 
             return ThreatIntelInfo(
-                is_malicious=data.get("abuseConfidenceScore", 0) > 25,
+                is_malicious=data.get("abuseConfidenceScore", 0) > ABUSE_MALICIOUS_THRESHOLD,
                 abuse_confidence_score=data.get("abuseConfidenceScore"),
                 country_code=data.get("countryCode"),
                 usage_type=data.get("usageType"),
@@ -92,7 +89,7 @@ class AbuseIPDBClient:
             )
 
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
+            if e.response.status_code == HTTP_TOO_MANY_REQUESTS:
                 logger.warning("abuseipdb_rate_limited")
             else:
                 logger.debug("abuseipdb_http_error", status=e.response.status_code)
@@ -120,10 +117,7 @@ class OTXClient:
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                headers={
-                    "X-OTX-API-KEY": self.api_key,
-                },
-                timeout=self.timeout,
+                headers={"X-OTX-API-KEY": self.api_key}, timeout=self.timeout
             )
         return self._client
 
@@ -134,9 +128,7 @@ class OTXClient:
 
         try:
             client = await self._get_client()
-            response = await client.get(
-                f"{self.BASE_URL}/indicators/IPv4/{ip}/general",
-            )
+            response = await client.get(f"{self.BASE_URL}/indicators/IPv4/{ip}/general")
             response.raise_for_status()
             data = response.json()
 
@@ -154,7 +146,7 @@ class OTXClient:
             )
 
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
+            if e.response.status_code == HTTP_TOO_MANY_REQUESTS:
                 logger.warning("otx_rate_limited")
             else:
                 logger.debug("otx_http_error", status=e.response.status_code)
@@ -173,17 +165,24 @@ class ThreatIntelEnrichment:
     """Threat intelligence enrichment combining multiple sources."""
 
     def __init__(self):
-        self.abuseipdb = AbuseIPDBClient(settings.enrichment.abuseipdb_key) if settings.enrichment.abuseipdb_key else None
-        self.otx = OTXClient(settings.enrichment.alienvault_otx_key) if settings.enrichment.alienvault_otx_key else None
-        self._cache: dict[str, ThreatIntelInfo] = {}
+        self.abuseipdb = (
+            AbuseIPDBClient(settings.enrichment.abuseipdb_key)
+            if settings.enrichment.abuseipdb_key
+            else None
+        )
+        self.otx = (
+            OTXClient(settings.enrichment.alienvault_otx_key)
+            if settings.enrichment.alienvault_otx_key
+            else None
+        )
+        self._cache = TTLCache(ttl=settings.enrichment.cache_ttl)
         self._cache_ttl = settings.enrichment.cache_ttl
 
     async def lookup(self, ip: str) -> ThreatIntelInfo | None:
         """Look up IP address across all threat intel sources."""
         # Check cache first
-        if ip in self._cache:
-            cached = self._cache[ip]
-            # Simple TTL check (in production, use proper timestamp)
+        cached = self._cache.get(ip)
+        if cached is not None:
             return cached
 
         results = []
@@ -205,7 +204,10 @@ class ThreatIntelEnrichment:
         combined = ThreatIntelInfo()
         for r in results:
             combined.is_malicious = combined.is_malicious or r.is_malicious
-            if r.abuse_confidence_score and (combined.abuse_confidence_score is None or r.abuse_confidence_score > combined.abuse_confidence_score):
+            if r.abuse_confidence_score and (
+                combined.abuse_confidence_score is None
+                or r.abuse_confidence_score > combined.abuse_confidence_score
+            ):
                 combined.abuse_confidence_score = r.abuse_confidence_score
             if r.country_code:
                 combined.country_code = r.country_code
@@ -230,7 +232,7 @@ class ThreatIntelEnrichment:
         combined.hostnames = list(set(combined.hostnames))
         combined.tags = list(set(combined.tags))
 
-        self._cache[ip] = combined
+        self._cache.set(ip, combined)
         return combined
 
     def enrich_flow(self, flow: dict[str, Any]) -> dict[str, Any]:

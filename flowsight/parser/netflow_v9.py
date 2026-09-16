@@ -5,6 +5,7 @@ Template-based flow parsing for NetFlow v9 and IPFIX protocols.
 Both protocols use the same template mechanism.
 """
 
+import socket
 import struct
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,10 +14,12 @@ from flowsight import get_logger
 
 logger = get_logger(__name__)
 
+
 # NetFlow v9 / IPFIX Field Types (IANA assigned)
 # https://www.iana.org/assignments/ipfix/ipfix.xhtml
 class FieldType:
     """Common NetFlow v9 / IPFIX field types."""
+
     # NetFlow v9 fields
     IN_BYTES = 1
     IN_PACKETS = 2
@@ -117,6 +120,7 @@ class FieldType:
 @dataclass
 class TemplateField:
     """Single field in a template."""
+
     field_id: int
     field_length: int
     enterprise_id: int = 0  # For IPFIX enterprise-specific fields
@@ -125,6 +129,7 @@ class TemplateField:
 @dataclass
 class Template:
     """Template definition for flow records."""
+
     template_id: int
     field_count: int
     fields: list[TemplateField] = field(default_factory=list)
@@ -216,8 +221,7 @@ class Template:
         }
         if enterprise_id == 0:
             return field_names.get(field_id, f"field_{field_id}")
-        else:
-            return f"enterprise_{enterprise_id}_field_{field_id}"
+        return f"enterprise_{enterprise_id}_field_{field_id}"
 
 
 class TemplateCache:
@@ -230,7 +234,12 @@ class TemplateCache:
         """Add a template to cache."""
         key = (source_ip, template.template_id)
         self._templates[key] = template
-        logger.debug("template_cached", source_ip=source_ip, template_id=template.template_id, field_count=template.field_count)
+        logger.debug(
+            "template_cached",
+            source_ip=source_ip,
+            template_id=template.template_id,
+            field_count=template.field_count,
+        )
 
     def get(self, source_ip: str, template_id: int) -> Template | None:
         """Get a template from cache."""
@@ -297,20 +306,24 @@ class NetFlowV9IPFIXParser:
         if version == 9:
             self.protocol = "netflow_v9"
             return self._parse_netflow_v9(data, source_ip, source_port)
-        elif version == 10:
+        if version == 10:
             self.protocol = "ipfix"
             return self._parse_ipfix(data, source_ip, source_port)
 
         return []
 
-    def _parse_netflow_v9(self, data: bytes, source_ip: str, source_port: int) -> list[dict[str, Any]]:
+    def _parse_netflow_v9(
+        self, data: bytes, source_ip: str, source_port: int
+    ) -> list[dict[str, Any]]:
         """Parse NetFlow v9 packet."""
         if len(data) < self.NETFLOW_V9_HEADER_SIZE:
             logger.warning("netflow_v9_packet_too_short", length=len(data))
             return []
 
         try:
-            header = struct.unpack(self.NETFLOW_V9_HEADER_FORMAT, data[:self.NETFLOW_V9_HEADER_SIZE])
+            header = struct.unpack(
+                self.NETFLOW_V9_HEADER_FORMAT, data[: self.NETFLOW_V9_HEADER_SIZE]
+            )
         except struct.error as e:
             logger.warning("netflow_v9_header_unpack_failed", error=str(e))
             return []
@@ -330,11 +343,11 @@ class NetFlowV9IPFIXParser:
                 break
 
             flowset_id, flowset_length = struct.unpack(
-                self.FLOWSET_HEADER_FORMAT, data[offset:offset + self.FLOWSET_HEADER_SIZE]
+                self.FLOWSET_HEADER_FORMAT, data[offset : offset + self.FLOWSET_HEADER_SIZE]
             )
             offset += self.FLOWSET_HEADER_SIZE
 
-            flowset_data = data[offset:offset + flowset_length - self.FLOWSET_HEADER_SIZE]
+            flowset_data = data[offset : offset + flowset_length - self.FLOWSET_HEADER_SIZE]
             offset += flowset_length - self.FLOWSET_HEADER_SIZE
 
             # Align to 4-byte boundary
@@ -345,9 +358,24 @@ class NetFlowV9IPFIXParser:
             elif flowset_id == self.OPTIONS_TEMPLATE_FLOWSET_ID:
                 self._parse_options_template_flowset(flowset_data, source_ip)
             elif flowset_id >= self.DATA_FLOWSET_ID_BASE:
-                flows.extend(self._parse_data_flowset(flowset_data, source_ip, flowset_id, sys_uptime, unix_secs, package_sequence, source_id))
+                flows.extend(
+                    self._parse_data_flowset(
+                        flowset_data,
+                        source_ip,
+                        flowset_id,
+                        sys_uptime,
+                        unix_secs,
+                        package_sequence,
+                        source_id,
+                    )
+                )
 
-        logger.debug("netflow_v9_parsed", source_ip=source_ip, flow_count=len(flows), sequence=package_sequence)
+        logger.debug(
+            "netflow_v9_parsed",
+            source_ip=source_ip,
+            flow_count=len(flows),
+            sequence=package_sequence,
+        )
         return flows
 
     def _parse_ipfix(self, data: bytes, source_ip: str, source_port: int) -> list[dict[str, Any]]:
@@ -357,7 +385,7 @@ class NetFlowV9IPFIXParser:
             return []
 
         try:
-            header = struct.unpack(self.IPFIX_HEADER_FORMAT, data[:self.IPFIX_HEADER_SIZE])
+            header = struct.unpack(self.IPFIX_HEADER_FORMAT, data[: self.IPFIX_HEADER_SIZE])
         except struct.error as e:
             logger.warning("ipfix_header_unpack_failed", error=str(e))
             return []
@@ -376,7 +404,7 @@ class NetFlowV9IPFIXParser:
 
         while offset + self.FLOWSET_HEADER_SIZE <= len(data):
             flowset_id, flowset_length = struct.unpack(
-                self.FLOWSET_HEADER_FORMAT, data[offset:offset + self.FLOWSET_HEADER_SIZE]
+                self.FLOWSET_HEADER_FORMAT, data[offset : offset + self.FLOWSET_HEADER_SIZE]
             )
             offset += self.FLOWSET_HEADER_SIZE
 
@@ -389,7 +417,7 @@ class NetFlowV9IPFIXParser:
                 logger.warning("ipfix_truncated_flowset")
                 break
 
-            flowset_data = data[offset:offset + flowset_data_len]
+            flowset_data = data[offset : offset + flowset_data_len]
             offset += flowset_data_len
 
             # Align to 4-byte boundary
@@ -400,7 +428,17 @@ class NetFlowV9IPFIXParser:
             elif flowset_id == self.OPTIONS_TEMPLATE_FLOWSET_ID:
                 self._parse_options_template_flowset(flowset_data, source_ip)
             elif flowset_id >= self.DATA_FLOWSET_ID_BASE:
-                flows.extend(self._parse_data_flowset(flowset_data, source_ip, flowset_id, 0, export_time, sequence, observation_domain_id))
+                flows.extend(
+                    self._parse_data_flowset(
+                        flowset_data,
+                        source_ip,
+                        flowset_id,
+                        0,
+                        export_time,
+                        sequence,
+                        observation_domain_id,
+                    )
+                )
 
         logger.debug("ipfix_parsed", source_ip=source_ip, flow_count=len(flows), sequence=sequence)
         return flows
@@ -409,7 +447,7 @@ class NetFlowV9IPFIXParser:
         """Parse a template flowset (v9 or IPFIX)."""
         offset = 0
         while offset + 4 <= len(data):  # template_id(2) + field_count(2)
-            template_id, field_count = struct.unpack("!HH", data[offset:offset + 4])
+            template_id, field_count = struct.unpack("!HH", data[offset : offset + 4])
             offset += 4
 
             template = Template(template_id=template_id, field_count=field_count)
@@ -418,7 +456,7 @@ class NetFlowV9IPFIXParser:
                 if offset + 4 > len(data):
                     logger.warning("netflow_v9_truncated_template_field")
                     break
-                field_id, field_length = struct.unpack("!HH", data[offset:offset + 4])
+                field_id, field_length = struct.unpack("!HH", data[offset : offset + 4])
                 offset += 4
 
                 template.fields.append(TemplateField(field_id=field_id, field_length=field_length))
@@ -429,28 +467,32 @@ class NetFlowV9IPFIXParser:
         """Parse an options template flowset (IPFIX)."""
         offset = 0
         while offset + 6 <= len(data):  # template_id(2) + scope_field_count(2) + field_count(2)
-            template_id, scope_field_count, field_count = struct.unpack("!HHH", data[offset:offset + 6])
+            template_id, scope_field_count, field_count = struct.unpack(
+                "!HHH", data[offset : offset + 6]
+            )
             offset += 6
 
             template = Template(
                 template_id=template_id,
                 field_count=field_count,
-                scope_field_count=scope_field_count
+                scope_field_count=scope_field_count,
             )
 
             # Parse scope fields
             for _ in range(scope_field_count):
                 if offset + 4 > len(data):
                     break
-                field_id, field_length = struct.unpack("!HH", data[offset:offset + 4])
+                field_id, field_length = struct.unpack("!HH", data[offset : offset + 4])
                 offset += 4
-                template.scope_fields.append(TemplateField(field_id=field_id, field_length=field_length))
+                template.scope_fields.append(
+                    TemplateField(field_id=field_id, field_length=field_length)
+                )
 
             # Parse option fields
             for _ in range(field_count):
                 if offset + 4 > len(data):
                     break
-                field_id, field_length = struct.unpack("!HH", data[offset:offset + 4])
+                field_id, field_length = struct.unpack("!HH", data[offset : offset + 4])
                 offset += 4
                 template.fields.append(TemplateField(field_id=field_id, field_length=field_length))
 
@@ -464,7 +506,7 @@ class NetFlowV9IPFIXParser:
         sys_uptime: int,
         unix_secs: int,
         package_sequence: int,
-        source_id: int
+        source_id: int,
     ) -> list[dict[str, Any]]:
         """Parse a data flowset using cached template."""
         template = template_cache.get(source_ip, template_id)
@@ -481,7 +523,7 @@ class NetFlowV9IPFIXParser:
 
         while offset + record_size <= len(data):
             try:
-                record = struct.unpack(fmt, data[offset:offset + record_size])
+                record = struct.unpack(fmt, data[offset : offset + record_size])
             except struct.error as e:
                 logger.warning("data_flowset_unpack_failed", error=str(e), offset=offset)
                 break
@@ -496,16 +538,16 @@ class NetFlowV9IPFIXParser:
                 "source_id": source_id,
             }
 
-            for i, (name, value) in enumerate(zip(field_names, record)):
+            for _i, (name, value) in enumerate(zip(field_names, record, strict=False)):
                 # Convert IP addresses
-                if name in ("src_ip", "dst_ip", "next_hop", "bgp_next_hop_v4") and isinstance(value, (bytes, int)):
+                if name in ("src_ip", "dst_ip", "next_hop", "bgp_next_hop_v4") and isinstance(
+                    value, (bytes, int)
+                ):
                     if isinstance(value, int):
                         flow[name] = struct.unpack("!I", struct.pack("!I", value))[0]
                     if isinstance(value, bytes) and len(value) == 4:
-                        import socket
                         flow[name] = socket.inet_ntoa(value)
                     elif isinstance(value, bytes) and len(value) == 16:
-                        import socket
                         flow[name] = socket.inet_ntop(socket.AF_INET6, value)
                 elif name in ("start_time", "end_time") and isinstance(value, int):
                     # Convert to seconds if milliseconds/microseconds/nanoseconds
@@ -519,7 +561,9 @@ class NetFlowV9IPFIXParser:
         return flows
 
 
-def parse_netflow_v9(data: bytes, source_ip: str = "", source_port: int = 0) -> list[dict[str, Any]]:
+def parse_netflow_v9(
+    data: bytes, source_ip: str = "", source_port: int = 0
+) -> list[dict[str, Any]]:
     """Convenience function to parse NetFlow v9."""
     parser = NetFlowV9IPFIXParser()
     return parser.parse(data, source_ip, source_port)
