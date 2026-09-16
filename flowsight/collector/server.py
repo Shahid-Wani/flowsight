@@ -3,6 +3,7 @@ FlowSight Collector - UDP Server
 
 Asyncio-based UDP server for receiving flow packets.
 """
+
 import asyncio
 import struct
 import time
@@ -16,6 +17,8 @@ from flowsight.parser.netflow_v9 import NetFlowV9IPFIXParser
 from flowsight.parser.sflow import SFlowParser
 
 logger = get_logger(__name__)
+
+NETFLOW_V5_VERSION = 5
 
 
 @dataclass
@@ -56,7 +59,7 @@ class NetFlowV5Handler(FlowProtocolHandler):
         if len(data) < self._parser.HEADER_SIZE:
             return False
         version, _count = struct.unpack("!HH", data[:4])
-        return version == 5
+        return version == NETFLOW_V5_VERSION
 
     def parse(self, data: bytes, source_ip: str, source_port: int) -> list[dict[str, Any]]:
         flows = self._parser.parse(data)
@@ -114,6 +117,8 @@ class FlowCollector:
         self._queue: asyncio.Queue[FlowPacket] = asyncio.Queue(maxsize=10000)
         self._worker_tasks: list[asyncio.Task] = []
         self._running = False
+        self._closed = asyncio.Event()
+        self._closed.set()  # not running yet: wait_closed returns immediately
         self._init_handlers()
 
     def _init_handlers(self):
@@ -135,6 +140,7 @@ class FlowCollector:
         )
 
         self._running = True
+        self._closed.clear()
         logger.info("collector_started", host=self.host, port=self.port)
 
         # Start worker tasks
@@ -159,8 +165,7 @@ class FlowCollector:
         if self._worker_tasks:
             try:
                 await asyncio.wait_for(
-                    asyncio.gather(*self._worker_tasks, return_exceptions=True),
-                    timeout=timeout,
+                    asyncio.gather(*self._worker_tasks, return_exceptions=True), timeout=timeout
                 )
             except TimeoutError:
                 logger.warning("collector_workers_stop_timeout", workers=len(self._worker_tasks))
@@ -172,12 +177,12 @@ class FlowCollector:
         if dropped:
             logger.warning("collector_queue_dropped_on_shutdown", dropped=dropped)
 
+        self._closed.set()
         logger.info("collector_stopped")
 
     async def wait_closed(self):
         """Wait until collector is closed."""
-        while self._running:
-            await asyncio.sleep(1)
+        await self._closed.wait()
 
     async def _worker(self, name: str):
         """Worker task to process flow packets."""

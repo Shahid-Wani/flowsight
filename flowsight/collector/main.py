@@ -58,7 +58,7 @@ async def run_collector():
     loop = asyncio.get_running_loop()
     try:
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(collector.stop()))
+            loop.add_signal_handler(sig, asyncio.create_task, collector.stop())
     except NotImplementedError:
         logger.debug("signal_handlers_unavailable_on_windows")
 
