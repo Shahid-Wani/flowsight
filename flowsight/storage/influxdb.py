@@ -5,6 +5,7 @@ Time-series storage for flow data using InfluxDB v2 API.
 """
 
 import asyncio
+import re
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +15,28 @@ from flowsight import get_logger, settings
 from flowsight.storage.base import StorageBackend
 
 logger = get_logger(__name__)
+
+_RELATIVE_TIME_RE = re.compile(r"^-?\d+(ns|us|ms|s|m|h|d|w|mo|y)$")
+
+
+def validate_time_range(start: str | None, stop: str | None) -> None:
+    """Validate Flux time literals before interpolation.
+
+    Accepts ``now``, relative durations (``-5m``, ``1h``, ``-7d``) and
+    RFC3339 timestamps. Raises ValueError for anything else so garbage
+    or injected fragments never reach a Flux query.
+    """
+    for value in (start, stop):
+        if not value:
+            raise ValueError(f"invalid time value: {value!r}")
+        if value == "now":
+            continue
+        if _RELATIVE_TIME_RE.match(value):
+            continue
+        try:
+            datetime.fromisoformat(value)
+        except ValueError as e:
+            raise ValueError(f"invalid time value: {value!r}") from e
 
 
 class InfluxDBStorage(StorageBackend):
@@ -128,7 +151,7 @@ class InfluxDBStorage(StorageBackend):
             if flow.get(tag_field) is not None:
                 point.tag(tag_field, str(flow[tag_field]))
 
-        # Fields (values)
+        # Field values become point fields
         for field_name, value in flow.items():
             if field_name in tag_fields:
                 continue  # Already added as tags
@@ -148,6 +171,7 @@ class InfluxDBStorage(StorageBackend):
         fields pivoted into columns (bytes, packets, ...). Filters are
         applied before the limit so filtered queries are correct.
         """
+        validate_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -187,6 +211,7 @@ class InfluxDBStorage(StorageBackend):
         self, start: str, stop: str, limit: int = 10, by: str = "bytes"
     ) -> list[dict[str, Any]]:
         """Get top talkers by bytes or packets."""
+        validate_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -213,6 +238,7 @@ class InfluxDBStorage(StorageBackend):
 
     async def get_protocol_distribution(self, start: str, stop: str) -> list[dict[str, Any]]:
         """Get protocol distribution."""
+        validate_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -238,6 +264,7 @@ class InfluxDBStorage(StorageBackend):
         self, start: str, stop: str, interval: str = "1m"
     ) -> list[dict[str, Any]]:
         """Get bandwidth time series."""
+        validate_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -264,6 +291,7 @@ class InfluxDBStorage(StorageBackend):
         Uses the ``src_country_code`` / ``dst_country_code`` tags written
         by the enrichment pipeline.
         """
+        validate_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -391,7 +419,5 @@ def _merge_geo_rows(
         entry["bytes_received"] += row.get("bytes", 0)
 
     return sorted(
-        countries.values(),
-        key=lambda c: c["bytes_sent"] + c["bytes_received"],
-        reverse=True,
+        countries.values(), key=lambda c: c["bytes_sent"] + c["bytes_received"], reverse=True
     )
