@@ -5,10 +5,12 @@ Evaluates flows against configured threshold rules and generates alerts.
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-from typing import Any, Callable
+from enum import StrEnum
+from typing import Any
+from uuid import uuid4
 
 from flowsight import get_logger
 from flowsight.config import settings
@@ -16,8 +18,9 @@ from flowsight.config import settings
 logger = get_logger(__name__)
 
 
-class AlertSeverity(str, Enum):
+class AlertSeverity(StrEnum):
     """Alert severity levels."""
+
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
@@ -26,6 +29,7 @@ class AlertSeverity(str, Enum):
 @dataclass
 class ThresholdRule:
     """Threshold-based alert rule."""
+
     name: str
     field: str
     operator: str  # >, <, >=, <=, ==, !=
@@ -59,10 +63,12 @@ class ThresholdRule:
 @dataclass
 class Alert:
     """Generated alert."""
+
     rule_name: str
     severity: AlertSeverity
     message: str
     flow_data: dict[str, Any]
+    id: str = field(default_factory=lambda: uuid4().hex[:12])
     timestamp: datetime = field(default_factory=datetime.utcnow)
     acknowledged: bool = False
     acknowledged_by: str | None = None
@@ -82,7 +88,13 @@ class ThresholdAlertEngine:
     def add_rule(self, rule: ThresholdRule):
         """Add a threshold rule."""
         self.rules.append(rule)
-        logger.info("threshold_rule_added", rule=rule.name, field=rule.field, operator=rule.operator, value=rule.value)
+        logger.info(
+            "threshold_rule_added",
+            rule=rule.name,
+            field=rule.field,
+            operator=rule.operator,
+            value=rule.value,
+        )
 
     def remove_rule(self, rule_name: str):
         """Remove a threshold rule by name."""
@@ -105,7 +117,10 @@ class ThresholdAlertEngine:
                 operator=rule_config.operator,
                 value=rule_config.value,
                 severity=AlertSeverity(rule_config.severity),
-                description=f"Threshold rule: {rule_config.field} {rule_config.operator} {rule_config.value}",
+                description=(
+                    f"Threshold rule: {rule_config.field} "
+                    f"{rule_config.operator} {rule_config.value}"
+                ),
             )
             self.add_rule(rule)
 
@@ -137,7 +152,10 @@ class ThresholdAlertEngine:
                 alert = Alert(
                     rule_name=rule.name,
                     severity=rule.severity,
-                    message=f"Threshold exceeded: {rule.field} {rule.operator} {rule.value} (value: {value})",
+                    message=(
+                        f"Threshold exceeded: {rule.field} {rule.operator} "
+                        f"{rule.value} (value: {value})"
+                    ),
                     flow_data=flow,
                 )
 
@@ -147,9 +165,14 @@ class ThresholdAlertEngine:
 
                 # Trim history
                 if len(self._alert_history) > self._max_history:
-                    self._alert_history = self._alert_history[-self._max_history:]
+                    self._alert_history = self._alert_history[-self._max_history :]
 
-                logger.warning("alert_generated", rule=rule.name, severity=rule.severity.value, flow_value=value)
+                logger.warning(
+                    "alert_generated",
+                    rule=rule.name,
+                    severity=rule.severity.value,
+                    flow_value=value,
+                )
 
         return alerts
 

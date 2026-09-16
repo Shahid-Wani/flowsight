@@ -5,9 +5,10 @@ Central manager for alerting - coordinates threshold engine, handlers, and alert
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from flowsight import get_logger
 from flowsight.alerting.threshold import Alert, AlertSeverity, ThresholdAlertEngine, ThresholdRule
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 @dataclass
 class AlertHandler:
     """Base alert handler interface."""
+
     name: str
     severity_filter: list[AlertSeverity] | None = None  # None = all severities
 
@@ -49,12 +51,14 @@ class AlertManager:
 
     def _handler_wrapper(self, handler: AlertHandler) -> Callable[[Alert], Any]:
         """Create a wrapper that checks severity filter before calling handler."""
+
         async def wrapper(alert: Alert):
             if handler.should_handle(alert):
                 try:
                     await handler.handle(alert)
                 except Exception as e:
                     logger.exception("alert_handler_error", handler=handler.name, error=str(e))
+
         return wrapper
 
     def load_default_rules(self):
@@ -64,6 +68,7 @@ class AlertManager:
         # Add default rules if no config rules
         if not self.engine.rules:
             from flowsight.alerting.threshold import create_default_rules
+
             for rule in create_default_rules():
                 self.engine.add_rule(rule)
 
@@ -93,16 +98,15 @@ class AlertManager:
         """Get alert history."""
         return self.engine.get_alert_history(limit, severity, rule_name, since)
 
-    def acknowledge_alert(self, alert_index: int, acknowledged_by: str) -> bool:
-        """Acknowledge an alert by history index."""
-        alerts = self.engine._alert_history
-        if 0 <= alert_index < len(alerts):
-            alert = alerts[alert_index]
-            alert.acknowledged = True
-            alert.acknowledged_by = acknowledged_by
-            alert.acknowledged_at = datetime.utcnow()
-            logger.info("alert_acknowledged", index=alert_index, by=acknowledged_by)
-            return True
+    def acknowledge_alert(self, alert_id: str, acknowledged_by: str) -> bool:
+        """Acknowledge an alert by its stable id."""
+        for alert in self.engine._alert_history:
+            if alert.id == alert_id:
+                alert.acknowledged = True
+                alert.acknowledged_by = acknowledged_by
+                alert.acknowledged_at = datetime.utcnow()
+                logger.info("alert_acknowledged", alert_id=alert_id, by=acknowledged_by)
+                return True
         return False
 
     def get_stats(self) -> dict[str, Any]:
@@ -112,7 +116,9 @@ class AlertManager:
             "handlers": [
                 {
                     "name": h.name,
-                    "severity_filter": [s.value for s in h.severity_filter] if h.severity_filter else "all"
+                    "severity_filter": [s.value for s in h.severity_filter]
+                    if h.severity_filter
+                    else "all",
                 }
                 for h in self.handlers
             ],
@@ -145,9 +151,7 @@ def _register_configured_handlers(manager: AlertManager) -> None:
                 continue
             manager.add_handler(
                 WebhookHandler(
-                    url=cfg.url,
-                    headers=cfg.headers or None,
-                    template=cfg.template or None,
+                    url=cfg.url, headers=cfg.headers or None, template=cfg.template or None
                 )
             )
         else:
