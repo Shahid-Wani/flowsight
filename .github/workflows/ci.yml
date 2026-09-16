@@ -134,6 +134,9 @@ jobs:
       - name: Run Ruff core rules (blocking)
         run: ruff check --select E4,E7,E9,F,W,I flowsight/ tests/ scripts/generate_demo_data.py
 
+      - name: Check formatting
+        run: ruff format --check flowsight/ tests/ scripts/
+
   lint-strict:
     name: Ruff (strict debt tracker)
     runs-on: ubuntu-latest
