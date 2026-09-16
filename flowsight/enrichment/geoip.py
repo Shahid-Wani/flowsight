@@ -11,6 +11,7 @@ import maxminddb
 
 from flowsight import get_logger
 from flowsight.config import settings
+from flowsight.enrichment.cache import TTLCache
 
 logger = get_logger(__name__)
 
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 @dataclass
 class GeoIPInfo:
     """GeoIP lookup result."""
+
     country_code: str | None = None
     country_name: str | None = None
     region_code: str | None = None
@@ -39,7 +41,7 @@ class GeoIPEnrichment:
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path or settings.enrichment.geoip_path
         self._reader: maxminddb.Reader | None = None
-        self._cache: dict[str, GeoIPInfo] = {}
+        self._cache = TTLCache(ttl=settings.enrichment.cache_ttl)
         self._cache_ttl = settings.enrichment.cache_ttl
         self._warned_missing = False
 
@@ -69,8 +71,9 @@ class GeoIPEnrichment:
     def lookup(self, ip: str) -> GeoIPInfo | None:
         """Look up IP address in GeoIP database."""
         # Check cache first
-        if ip in self._cache:
-            return self._cache[ip]
+        cached = self._cache.get(ip)
+        if cached is not None:
+            return cached
 
         if not self._reader:
             self.open()
@@ -83,7 +86,7 @@ class GeoIPEnrichment:
                 return None
 
             geoip = self._parse_result(result)
-            self._cache[ip] = geoip
+            self._cache.set(ip, geoip)
             return geoip
 
         except Exception as e:
@@ -101,7 +104,7 @@ class GeoIPEnrichment:
             geoip.is_eu = result["country"].get("is_in_european_union", False)
 
         # Region/Subdivision
-        if "subdivisions" in result and result["subdivisions"]:
+        if result.get("subdivisions"):
             sub = result["subdivisions"][0]
             geoip.region_code = sub.get("iso_code")
             geoip.region_name = sub.get("names", {}).get("en")

@@ -11,6 +11,7 @@ import maxminddb
 
 from flowsight import get_logger
 from flowsight.config import settings
+from flowsight.enrichment.cache import TTLCache
 
 logger = get_logger(__name__)
 
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 @dataclass
 class ASNInfo:
     """ASN lookup result."""
+
     autonomous_system_number: int | None = None
     autonomous_system_organization: str | None = None
     network: str | None = None
@@ -30,7 +32,7 @@ class ASNEnrichment:
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path or settings.enrichment.asn_path
         self._reader: maxminddb.Reader | None = None
-        self._cache: dict[str, ASNInfo] = {}
+        self._cache = TTLCache(ttl=settings.enrichment.cache_ttl)
         self._cache_ttl = settings.enrichment.cache_ttl
         self._warned_missing = False
 
@@ -60,8 +62,9 @@ class ASNEnrichment:
     def lookup(self, ip: str) -> ASNInfo | None:
         """Look up IP address in ASN database."""
         # Check cache first
-        if ip in self._cache:
-            return self._cache[ip]
+        cached = self._cache.get(ip)
+        if cached is not None:
+            return cached
 
         if not self._reader:
             self.open()
@@ -74,7 +77,7 @@ class ASNEnrichment:
                 return None
 
             asn = self._parse_result(result)
-            self._cache[ip] = asn
+            self._cache.set(ip, asn)
             return asn
 
         except Exception as e:
