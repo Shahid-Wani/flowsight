@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
-from flowsight import get_logger, settings, setup_logging
+from flowsight import __version__, get_logger, settings, setup_logging
 from flowsight.api import deps
 from flowsight.api.routes import router as api_router
 from flowsight.api.websocket import router as ws_router
@@ -38,9 +38,7 @@ async def lifespan(app: FastAPI):
         app.state.storage = storage
     except Exception as e:
         logger.warning(
-            "influxdb_unavailable_starting_degraded",
-            url=settings.storage.url,
-            error=str(e),
+            "influxdb_unavailable_starting_degraded", url=settings.storage.url, error=str(e)
         )
         await storage.disconnect()
         deps.storage = None
@@ -60,7 +58,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="FlowSight API",
         description="NetFlow/sFlow/IPFIX Analyzer REST API",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 

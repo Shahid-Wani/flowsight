@@ -4,7 +4,7 @@ FlowSight - NetFlow/sFlow/IPFIX Analyzer
 Open-source network flow analyzer for bandwidth visibility & threat hunting.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Shahid Wani"
 __email__ = "shahid.wani192@gmail.com"
 

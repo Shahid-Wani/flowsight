@@ -1,6 +1,6 @@
 [project]
 name = "flowsight"
-version = "0.1.0"
+version = "0.2.0"
 description = "NetFlow/sFlow/IPFIX Analyzer for bandwidth visibility & threat hunting"
 readme = "README.md"
 license = {text = "MIT"}
@@ -70,10 +70,38 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "T20", "PIE", "PT", "Q", "RUF", "ERA", "PD", "PGH", "PL", "TRY", "NPY", "ANN", "ARG", "PTH", "FURB", "RET", "ASYNC"]
-ignore = ["S101", "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "ANN204", "ARG001", "ARG002", "PTH118", "PTH123", "TRY003", "B008"]
+ignore = [
+    "S101", "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "ANN204", "ARG001", "ARG002",
+    "PTH118", "PTH123", "TRY003", "B008",
+    # Deliberate design patterns, documented here rather than silenced per-line:
+    "PLW0603",  # module-level singletons (alert/enrichment managers)
+    "ANN401",   # Any-typed injectable dependencies (duck-typed for test fakes)
+    "PLR0913",  # data-carrying signatures (handlers, parsers, detectors)
+    "PLR0917",
+    "ASYNC109", # timeout parameter on FlowCollector.stop() is intentional
+]
+
+[tool.ruff.lint.isort]
+# Compatible with format.skip-magic-trailing-comma = true
+split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "ANN001", "ANN002", "ANN003", "ARG001", "ARG002"]
+# Tests: assertion literals, import-inside-test style, and capitalized
+# test constants (T0) are intentional, not lint debt.
+"tests/*" = ["S101", "ANN001", "ANN002", "ANN003", "ARG001", "ARG002", "PLR2004", "PLC0415", "N806"]
+# Wire-format offsets and version numbers are self-documenting in parsers.
+"flowsight/parser/*" = ["PLR2004"]
+# Function-local imports are deliberate in these files: import-cycle
+# avoidance (manager/pipeline), lazy CLI startup (clis), deferred heavy
+# imports (uvicorn), and post-CLI config loads.
+"flowsight/alerting/manager.py" = ["PLC0415"]
+"flowsight/pipeline.py" = ["PLC0415"]
+"flowsight/api/main.py" = ["PLC0415"]
+"flowsight/collector/main.py" = ["PLC0415"]
+"flowsight/detection/cli.py" = ["PLC0415"]
+"flowsight/enrichment/cli.py" = ["PLC0415"]
+# HTML email templates legitimately contain long unbreakable lines.
+"flowsight/alerting/handlers.py" = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
