@@ -5,42 +5,82 @@ from fastapi.testclient import TestClient
 
 
 class TestTimeRangeValidation:
-    def test_accepts_now(self):
-        from flowsight.storage.influxdb import validate_time_range
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Flux keywords
+            "now",
+            "now()",
+            # integer epoch seconds (valid in Flux range())
+            "1577836800",
+            # relative durations, simple and compound
+            "-5m",
+            "-1h",
+            "-30s",
+            "-7d",
+            "-2w",
+            "1h",
+            "-1h30m",
+            "-2h15m",
+            "-1d12h",
+            "-1h30m45s",
+            # RFC3339 with explicit offset
+            "2020-01-01T00:00:00Z",
+            "2020-01-01T00:00:00.123456Z",
+            "2020-01-01T00:00:00.123456789Z",
+            "2020-01-01T01:00:00+02:00",
+        ],
+    )
+    def test_accepts_flux_time_literals(self, value):
+        """Everything Flux's range() accepts must pass validation."""
+        from flowsight.storage.influxdb import normalize_time_range
 
-        validate_time_range("now", "now")
+        normalize_time_range(value, "now")
+        normalize_time_range("-1h", value)
 
-    def test_accepts_rfc3339(self):
-        from flowsight.storage.influxdb import validate_time_range
+    def test_bare_now_normalized_to_function_call(self):
+        """Bare `now` is a function reference in Flux, not a time value.
 
-        validate_time_range("2020-01-01T00:00:00Z", "2020-01-01T01:00:00+02:00")
-        validate_time_range("2020-01-01T00:00:00.123456Z", "now")
+        Clients (including the dashboard) send `stop=now`; it must be
+        rewritten to `now()` so real Flux accepts the query.
+        """
+        from flowsight.storage.influxdb import normalize_time_range
 
-    def test_accepts_relative_durations(self):
-        from flowsight.storage.influxdb import validate_time_range
-
-        for value in ("-5m", "-1h", "-30s", "-7d", "-2w", "1h"):
-            validate_time_range(value, "now")
+        assert normalize_time_range("now", "now") == ("now()", "now()")
+        assert normalize_time_range("now()", "-1h") == ("now()", "-1h")
+        # Valid literals pass through unchanged
+        assert normalize_time_range("-1h", "2020-01-01T00:00:00Z") == (
+            "-1h",
+            "2020-01-01T00:00:00Z",
+        )
 
     @pytest.mark.parametrize(
         "bad",
         [
             "",
+            " ",
             "1 hour",
+            "yesterday",
             "now; drop(bucket)",
             '2020-01-01" |> yield(name:"x',
             "-1x",
-            "yesterday",
+            "+1h",
             None,
+            # Parses as a datetime in Python, but is NOT a Flux time literal:
+            "2020-01-01",
+            "2020-01-01 00:00:00",
+            "2020-01-01T00:00:00",
+            "2020-01-01T00:00:00z",
         ],
     )
-    def test_rejects_invalid_values(self, bad):
-        from flowsight.storage.influxdb import validate_time_range
+    def test_rejects_non_flux_literals(self, bad):
+        """Anything Flux would reject must 400 instead of reaching a query."""
+        from flowsight.storage.influxdb import normalize_time_range
 
         with pytest.raises(ValueError, match="invalid time"):
-            validate_time_range(bad, "now")
+            normalize_time_range(bad, "now")
         with pytest.raises(ValueError, match="invalid time"):
-            validate_time_range("now", bad)
+            normalize_time_range("now", bad)
 
     async def test_query_rejects_before_connecting(self):
         """Validation must run before any connection attempt."""
