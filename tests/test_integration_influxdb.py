@@ -247,3 +247,31 @@ async def test_bandwidth_timeseries(storage):
     )
     total = sum(point["bytes"] or 0 for point in series)
     assert total == 300
+
+
+async def test_validator_accepted_forms_work_in_real_flux(storage):
+    """The validator's accepted forms must be valid for real Flux.
+
+    Guards the Day 5 follow-up: validation once accepted date-only
+    strings Flux rejects (500s) while rejecting compound durations
+    Flux accepts (spurious 400s).
+    """
+    flows = [make_flow(T0 + 360, "10.0.9.1", "10.0.9.9", 777)]
+    await write_and_wait(storage, flows, count=1)
+
+    # Compound relative duration: must not make Flux error
+    rows = await storage.query_flows("-1h30m", "now")
+    assert isinstance(rows, list)
+
+    # Compound duration with seconds granularity
+    rows = await storage.query_flows("-1h30m45s", "now")
+    assert isinstance(rows, list)
+
+    # now() function form
+    rows = await storage.query_flows("-5m", "now()")
+    assert isinstance(rows, list)
+
+    # Integer epoch seconds resolve to the synthetic window
+    rows = await storage.query_flows(str(T0 - 1), str(T0 + 361))
+    assert len(rows) == 1
+    assert rows[0]["bytes"] == 777
