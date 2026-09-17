@@ -258,8 +258,7 @@ async def test_bandwidth_timeseries(storage):
         ("-1h", "now"),
         ("-1h", "now()"),
         ("-5m", "now()"),
-        # Compound durations - whether Flux accepts them is exactly
-        # what this matrix verifies per form.
+        # Compound durations (verified accepted by Flux 2.7)
         ("-1h30m", "now()"),
         ("-1d12h", "now()"),
         ("-1h30m45s", "now()"),
@@ -276,10 +275,15 @@ async def test_accepted_time_forms_execute_in_real_flux(storage, start, stop):
 
 
 async def test_epoch_seconds_resolve_to_window(storage):
-    """Integer epoch seconds must resolve to the synthetic window."""
+    """Integer epoch seconds must resolve to the synthetic window.
+
+    The window is narrowed to this test's own flow (T0+360) because the
+    other tests' synthetic times all fall inside the first hour and
+    would otherwise be matched too.
+    """
     flows = [make_flow(T0 + 360, "10.0.9.1", "10.0.9.9", 777)]
     await write_and_wait(storage, flows, count=1)
 
-    rows = await storage.query_flows(str(T0 - 1), str(T0 + 361))
+    rows = await storage.query_flows(str(T0 + 359), str(T0 + 361))
     assert len(rows) == 1
     assert rows[0]["bytes"] == 777
