@@ -33,7 +33,6 @@ class ASNEnrichment:
         self.db_path = db_path or settings.enrichment.asn_path
         self._reader: maxminddb.Reader | None = None
         self._cache = TTLCache(ttl=settings.enrichment.cache_ttl)
-        self._cache_ttl = settings.enrichment.cache_ttl
         self._warned_missing = False
 
     def open(self):

@@ -176,7 +176,6 @@ class ThreatIntelEnrichment:
             else None
         )
         self._cache = TTLCache(ttl=settings.enrichment.cache_ttl)
-        self._cache_ttl = settings.enrichment.cache_ttl
 
     async def lookup(self, ip: str) -> ThreatIntelInfo | None:
         """Look up IP address across all threat intel sources."""
