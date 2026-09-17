@@ -16,27 +16,37 @@ from flowsight.storage.base import StorageBackend
 
 logger = get_logger(__name__)
 
-_RELATIVE_TIME_RE = re.compile(r"^-?\d+(ns|us|ms|s|m|h|d|w|mo|y)$")
+# Flux time literal forms accepted by range(). Keep these aligned with
+# what Flux itself parses; anything accepted here must not make Flux
+# error, and anything Flux rejects must be refused before querying.
+_NOW_RE = re.compile(r"^now(?:\(\))?$")
+_EPOCH_RE = re.compile(r"^\d+$")
+_DURATION_RE = re.compile(r"^-?(\d+(ns|us|ms|s|m|h|d|w|mo|y))+$")
+_RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
 
 
 def validate_time_range(start: str | None, stop: str | None) -> None:
     """Validate Flux time literals before interpolation.
 
-    Accepts ``now``, relative durations (``-5m``, ``1h``, ``-7d``) and
-    RFC3339 timestamps. Raises ValueError for anything else so garbage
-    or injected fragments never reach a Flux query.
+    Accepts the forms ``range()`` supports: ``now`` / ``now()``,
+    integer epoch seconds, relative durations (simple or compound:
+    ``-1h30m``), and RFC3339 timestamps with an explicit ``Z`` or
+    numeric offset. Raises ValueError for anything else, so garbage or
+    injected fragments never reach a Flux query.
+
+    Note: this validates the *form*, not the ordering (a start after
+    the stop is left for Flux to reject).
     """
     for value in (start, stop):
         if not value:
             raise ValueError(f"invalid time value: {value!r}")
-        if value == "now":
+        if _NOW_RE.match(value) or _EPOCH_RE.match(value):
             continue
-        if _RELATIVE_TIME_RE.match(value):
+        if _DURATION_RE.match(value):
             continue
-        try:
-            datetime.fromisoformat(value)
-        except ValueError as e:
-            raise ValueError(f"invalid time value: {value!r}") from e
+        if _RFC3339_RE.match(value):
+            continue
+        raise ValueError(f"invalid time value: {value!r}")
 
 
 class InfluxDBStorage(StorageBackend):
