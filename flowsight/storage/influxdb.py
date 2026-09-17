@@ -25,28 +25,34 @@ _DURATION_RE = re.compile(r"^-?(\d+(ns|us|ms|s|m|h|d|w|mo|y))+$")
 _RFC3339_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
 
 
-def validate_time_range(start: str | None, stop: str | None) -> None:
-    """Validate Flux time literals before interpolation.
+def normalize_time_range(start: str | None, stop: str | None) -> tuple[str, str]:
+    """Validate client time values and return Flux-safe literals.
 
-    Accepts the forms ``range()`` supports: ``now`` / ``now()``,
-    integer epoch seconds, relative durations (simple or compound:
-    ``-1h30m``), and RFC3339 timestamps with an explicit ``Z`` or
-    numeric offset. Raises ValueError for anything else, so garbage or
-    injected fragments never reach a Flux query.
+    Accepts the forms ``range()`` supports: ``now`` / ``now()``, integer
+    epoch seconds, relative durations (simple or compound: ``-1h30m``),
+    and RFC3339 timestamps with an explicit ``Z`` or numeric offset.
 
-    Note: this validates the *form*, not the ordering (a start after
-    the stop is left for Flux to reject).
+    Bare ``now`` is normalized to ``now()``: in Flux, bare ``now`` is
+    the *function* ``() => time``, not a time value - passing it to
+    ``range()`` fails with "value is not a time". Clients (including
+    the dashboard) send ``stop=now``, so the friendly form is accepted
+    and rewritten.
+
+    Raises ValueError for anything else, so garbage or injected
+    fragments never reach a Flux query. Validates form, not ordering.
     """
+    normalized: list[str] = []
     for value in (start, stop):
         if not value:
             raise ValueError(f"invalid time value: {value!r}")
-        if _NOW_RE.match(value) or _EPOCH_RE.match(value):
+        if _NOW_RE.match(value):
+            normalized.append("now()")
             continue
-        if _DURATION_RE.match(value):
-            continue
-        if _RFC3339_RE.match(value):
+        if _EPOCH_RE.match(value) or _DURATION_RE.match(value) or _RFC3339_RE.match(value):
+            normalized.append(value)
             continue
         raise ValueError(f"invalid time value: {value!r}")
+    return normalized[0], normalized[1]
 
 
 class InfluxDBStorage(StorageBackend):
@@ -181,7 +187,7 @@ class InfluxDBStorage(StorageBackend):
         fields pivoted into columns (bytes, packets, ...). Filters are
         applied before the limit so filtered queries are correct.
         """
-        validate_time_range(start, stop)
+        start, stop = normalize_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -221,7 +227,7 @@ class InfluxDBStorage(StorageBackend):
         self, start: str, stop: str, limit: int = 10, by: str = "bytes"
     ) -> list[dict[str, Any]]:
         """Get top talkers by bytes or packets."""
-        validate_time_range(start, stop)
+        start, stop = normalize_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -248,7 +254,7 @@ class InfluxDBStorage(StorageBackend):
 
     async def get_protocol_distribution(self, start: str, stop: str) -> list[dict[str, Any]]:
         """Get protocol distribution."""
-        validate_time_range(start, stop)
+        start, stop = normalize_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -274,7 +280,7 @@ class InfluxDBStorage(StorageBackend):
         self, start: str, stop: str, interval: str = "1m"
     ) -> list[dict[str, Any]]:
         """Get bandwidth time series."""
-        validate_time_range(start, stop)
+        start, stop = normalize_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
@@ -301,7 +307,7 @@ class InfluxDBStorage(StorageBackend):
         Uses the ``src_country_code`` / ``dst_country_code`` tags written
         by the enrichment pipeline.
         """
-        validate_time_range(start, stop)
+        start, stop = normalize_time_range(start, stop)
         if not self._connected:
             await self.connect()
 
