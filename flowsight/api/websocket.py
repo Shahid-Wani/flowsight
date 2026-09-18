@@ -6,7 +6,6 @@ Real-time WebSocket endpoints for live flow updates.
 
 import asyncio
 import json
-from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -17,6 +16,17 @@ from flowsight.api import deps
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+def _recent_window(seconds: int) -> tuple[str, str]:
+    """Return a Flux-ready ``(start, stop)`` pair covering the last N seconds.
+
+    A relative duration plus an explicit ``now()`` keeps the window
+    valid Flux regardless of local clock or timezone formatting:
+    absolute naive timestamps (``datetime.utcnow().isoformat()``) are
+    rejected by the storage layer's ``normalize_time_range``.
+    """
+    return f"-{seconds}s", "now()"
 
 
 class ConnectionManager:
@@ -62,10 +72,7 @@ class ConnectionManager:
         while self.active_connections:
             try:
                 if deps.storage and deps.storage._connected:
-                    # Get latest bandwidth point
-
-                    stop = datetime.utcnow().isoformat()
-                    start = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
+                    start, stop = _recent_window(30)
 
                     series = await deps.storage.get_bandwidth_timeseries(start, stop, "10s")
                     if series:
