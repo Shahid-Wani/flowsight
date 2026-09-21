@@ -136,12 +136,28 @@ class Pipeline:
             logger.exception("pipeline_detection_failed", error=str(e))
 
     async def _alert(self, flows: list[dict[str, Any]]) -> None:
-        """Evaluate threshold rules and dispatch alerts."""
+        """Evaluate threshold rules, dispatch alerts, and persist them."""
         if self.alert_manager is None:
             return
         try:
             alerts = await self.alert_manager.evaluate_batch(flows)
             if alerts:
                 logger.info("pipeline_alerts_generated", count=len(alerts))
+                await self._persist_alerts(alerts)
         except Exception as e:
             logger.exception("pipeline_alerting_failed", error=str(e))
+
+    async def _persist_alerts(self, alerts: list[Any]) -> None:
+        """Persist alerts so other processes (the API) can read them.
+
+        The collector and API run in separate processes - in-memory
+        history is not shared, so persistence is the only path that
+        makes collector-generated alerts visible to the API.
+        """
+        if self.storage is None:
+            return
+        for alert in alerts:
+            try:
+                await self.storage.write_alert(alert)
+            except Exception as e:
+                logger.warning("pipeline_alert_persist_failed", alert_id=alert.id, error=str(e))
