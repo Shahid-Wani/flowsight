@@ -159,14 +159,16 @@ class TestAlertSerialization:
         assert point is not None
 
     def test_merge_alert_acks(self):
-        """Ack rows must set acknowledged state on matching alerts by id."""
+        """Ack rows must set acknowledged state on matching alerts by id.
+
+        Ack rows are Flux records in the default dialect: the acked-by
+        user is in ``_value``, not under the field name.
+        """
         from flowsight.storage.influxdb import merge_alert_acks
 
         a1 = make_alert("rule_one")
         a2 = make_alert("rule_two")
-        ack_rows = [
-            {"alert_id": a1.id, "acknowledged_by": "alice", "_time": datetime(2020, 1, 1, 12, 0, 0)}
-        ]
+        ack_rows = [{"alert_id": a1.id, "_value": "alice", "_time": datetime(2020, 1, 1, 12, 0, 0)}]
 
         merged = merge_alert_acks([alert_row(a1), alert_row(a2)], ack_rows)
 

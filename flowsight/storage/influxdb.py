@@ -605,7 +605,9 @@ def merge_alert_acks(
     """Merge ack records into alert rows by alert id.
 
     Sets ``acknowledged``/``acknowledged_by``/``acknowledged_at`` from
-    the latest ack record per alert.
+    the latest ack record per alert. Ack rows come from Flux in the
+    default dialect: the acked-by user is in ``_value`` (the field
+    value), not under the field's name.
     """
     acks_by_id: dict[str | None, dict[str, Any]] = {}
     for row in ack_rows:
@@ -622,7 +624,7 @@ def merge_alert_acks(
         ack = acks_by_id.get(alert.get("id"))
         if ack is not None:
             row["acknowledged"] = True
-            row["acknowledged_by"] = ack.get("acknowledged_by")
+            row["acknowledged_by"] = ack.get("_value")
             ack_time = ack.get("_time")
             row["acknowledged_at"] = (
                 ack_time.isoformat() if hasattr(ack_time, "isoformat") else ack_time
