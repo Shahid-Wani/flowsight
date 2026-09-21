@@ -19,6 +19,8 @@ one via a service container). Writes go to synthetic time windows
 """
 
 import asyncio
+import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -235,3 +237,140 @@ def test_geo_map_endpoint_names_and_sorts(api_storage):
     de = locations[1]
     assert de["country_name"] == "Germany"
     assert de["bytes_received"] == 444
+
+
+def make_enriched_flow(
+    unix_secs: int,
+    src_ip: str,
+    dst_ip: str,
+    bytes_: int,
+    protocol: int,
+    country: str,
+    asn: int,
+    asn_org: str,
+) -> dict:
+    """Flow with full enrichment (Day 7: asn_org is now a tag too)."""
+    return make_flow(
+        unix_secs,
+        src_ip,
+        dst_ip,
+        bytes_,
+        protocol=protocol,
+        src_country_code=country,
+        dst_country_code=country,
+    ) | {"src_asn": asn, "src_asn_org": asn_org}
+
+
+def test_top_talkers_end_to_end_enriched(api_storage):
+    """Talkers must come back with packets/protocol/country/asn populated."""
+    flows = [
+        make_enriched_flow(
+            T0 + 700,
+            "10.2.0.1",
+            "10.2.0.9",
+            100,
+            protocol=6,
+            country="US",
+            asn=15169,
+            asn_org="GOOGLE",
+        ),
+        make_enriched_flow(
+            T0 + 701,
+            "10.2.0.1",
+            "10.2.0.9",
+            400,
+            protocol=17,
+            country="US",
+            asn=15169,
+            asn_org="GOOGLE",
+        ),
+        make_enriched_flow(
+            T0 + 702, "10.2.0.2", "10.2.0.9", 50, protocol=6, country="DE", asn=3320, asn_org="DTAG"
+        ),
+    ]
+    seed_and_wait(api_storage, flows)
+
+    client = make_client()
+    response = client.get(
+        "/api/v1/top-talkers", params={"start": _rfc3339(T0 + 699), "stop": _rfc3339(T0 + 760)}
+    )
+    assert response.status_code == 200
+
+    talkers = response.json()["talkers"]
+    assert len(talkers) == 2
+
+    first = talkers[0]  # 10.2.0.1 with 500 total bytes
+    assert first["src_ip"] == "10.2.0.1"
+    assert first["value"] == 500
+    assert first["packets"] == (100 // 500) + (400 // 500) + 2  # make_flow packets + this flow's
+    assert first["protocol"] == 17  # dominant (400-byte) row's protocol, as a number
+    assert first["country_code"] == "US"
+    assert first["asn"] == 15169
+    assert first["asn_org"] == "GOOGLE"
+    assert first["dst_ip"] == "10.2.0.9"
+
+
+def test_alert_persistence_round_trip_via_api(api_storage):
+    """Pipeline-persisted alerts must be readable and ackable via the API."""
+
+    from flowsight.alerting.threshold import Alert
+    from flowsight.storage.influxdb import alert_to_point
+
+    alert_time = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    alert = Alert(
+        rule_name="persisted_rule",
+        severity="warning",
+        message="persisted alert round trip",
+        flow_data={"src_ip": "10.2.9.9", "bytes": 12345},
+        timestamp=alert_time,
+    )
+    asyncio.run(api_storage.write_flows([]))  # ensure connected
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            api_storage.write_api.write(
+                bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)]
+            )
+        )
+    finally:
+        loop.close()
+
+    # Poll until the alert is readable through the API route
+    client = make_client()
+    found = None
+    for _ in range(30):
+        response = client.get("/api/v1/alerts", params={"start": "-15m", "stop": "now"})
+        assert response.status_code == 200
+        matches = [a for a in response.json()["alerts"] if a["id"] == alert.id]
+        if matches:
+            found = matches[0]
+            break
+
+        time.sleep(0.5)
+    assert found is not None, "persisted alert never became readable via the API"
+    assert found["rule_name"] == "persisted_rule"
+    assert found["severity"] == "warning"
+    assert found["flow_data"]["bytes"] == 12345
+    assert found["acknowledged"] is False
+
+    # Acknowledge through the API, then verify the ack state persists
+    ack = client.post(
+        f"/api/v1/alerts/{alert.id}/acknowledge", params={"acknowledged_by": "ci-bot"}
+    )
+    assert ack.status_code == 200
+
+    acked = None
+    for _ in range(30):
+        response = client.get(
+            "/api/v1/alerts", params={"start": "-15m", "stop": "now", "acknowledged": "true"}
+        )
+        assert response.status_code == 200
+        matches = [a for a in response.json()["alerts"] if a["id"] == alert.id]
+        if matches:
+            acked = matches[0]
+            break
+        time.sleep(0.5)
+    assert acked is not None, "ack state never became visible via the API"
+    assert acked["acknowledged"] is True
+    assert acked["acknowledged_by"] == "ci-bot"
