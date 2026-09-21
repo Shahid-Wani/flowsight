@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from flowsight import get_logger
 from flowsight.alerting.manager import get_alert_manager
 from flowsight.alerting.threshold import AlertSeverity
+from flowsight.api import deps
 from flowsight.api.countries import country_info
 from flowsight.api.deps import get_storage
 from flowsight.api.protocols import protocol_name
@@ -256,34 +257,56 @@ async def get_alerts(
     severity: AlertSeverity | None = Query(None, description="Filter by severity"),
     acknowledged: bool | None = Query(None, description="Filter by acknowledged status"),
 ):
-    """Get alerts with optional filters."""
+    """Get alerts with optional filters.
+
+    Reads persisted alerts when storage is available - the collector's
+    pipeline runs in a separate process, so its alerts only reach this
+    endpoint through persistence. Falls back to this process's
+    in-memory history when storage is unavailable.
+    """
     try:
-        manager = await get_alert_manager()
-        all_alerts = manager.get_alert_history(limit=limit)
+        severity_str = severity.value if severity else None
+        persisted = False
+        alert_rows: list[dict[str, Any]] = []
+        try:
+            if deps.storage is not None:
+                alert_rows = await deps.storage.read_alerts(
+                    start, stop, limit=limit, severity=severity_str
+                )
+                persisted = True
+        except Exception as e:
+            logger.warning("read_alerts_falling_back_to_memory", error=str(e))
 
-        # Apply filters
-        filtered = all_alerts
-        if severity:
-            filtered = [a for a in filtered if a.severity == severity]
+        if not persisted:
+            manager = await get_alert_manager()
+            objects = manager.get_alert_history(limit=limit)
+            alert_rows = [
+                {
+                    "id": a.id,
+                    "rule_name": a.rule_name,
+                    "severity": a.severity.value,
+                    "message": a.message,
+                    "flow_data": a.flow_data,
+                    "timestamp": a.timestamp.isoformat(),
+                    "acknowledged": a.acknowledged,
+                    "acknowledged_by": a.acknowledged_by,
+                    "acknowledged_at": a.acknowledged_at.isoformat() if a.acknowledged_at else None,
+                }
+                for a in objects
+            ]
+
+        # Filters (client-side; severity already applied for persisted reads)
+        filtered = alert_rows
+        if not persisted and severity:
+            filtered = [a for a in filtered if a["severity"] == severity.value]
         if acknowledged is not None:
-            filtered = [a for a in filtered if a.acknowledged == acknowledged]
+            filtered = [a for a in filtered if a["acknowledged"] == acknowledged]
 
-        alert_responses = [
-            AlertResponse(
-                id=a.id,
-                rule_name=a.rule_name,
-                severity=a.severity,
-                message=a.message,
-                flow_data=a.flow_data,
-                timestamp=a.timestamp.isoformat(),
-                acknowledged=a.acknowledged,
-                acknowledged_by=a.acknowledged_by,
-                acknowledged_at=a.acknowledged_at.isoformat() if a.acknowledged_at else None,
-            )
-            for a in filtered
-        ]
+        alert_responses = [AlertResponse(**row) for row in filtered]
 
         return AlertsResponse(alerts=alert_responses, total=len(alert_responses))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("get_alerts_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -308,10 +331,24 @@ async def get_alert_summary():
 
 @router.post("/alerts/{alert_id}/acknowledge", response_model=AcknowledgeResponse)
 async def acknowledge_alert(alert_id: str, acknowledged_by: str = "api-user"):
-    """Acknowledge an alert by its stable id."""
+    """Acknowledge an alert by its stable id.
+
+    Updates this process's in-memory history AND persists the ack so
+    it survives restarts and is visible to other processes.
+    """
     try:
         manager = await get_alert_manager()
         success = manager.acknowledge_alert(alert_id, acknowledged_by)
+
+        if deps.storage is not None:
+            try:
+                await deps.storage.write_alert_ack(alert_id, acknowledged_by)
+                # An ack for a persisted (collector-generated) alert may
+                # not exist in this process's memory - that is fine.
+                success = True
+            except Exception as e:
+                logger.warning("alert_ack_persist_failed", alert_id=alert_id, error=str(e))
+
         if not success:
             raise HTTPException(status_code=404, detail="Alert not found")
 
