@@ -74,6 +74,12 @@ class Alert:
     acknowledged_by: str | None = None
     acknowledged_at: datetime | None = None
 
+    def __post_init__(self):
+        # Plain dataclass: no validation on init, so a raw string can
+        # slip in from any caller. Coerce to the enum (idempotent for
+        # enum inputs; ValueError for garbage).
+        self.severity = AlertSeverity(self.severity)
+
 
 class ThresholdAlertEngine:
     """Evaluates flows against threshold rules and generates alerts."""
