@@ -82,6 +82,10 @@ class ConnectionManager:
                     # Get top talkers
                     talkers = await deps.storage.get_top_talkers(start, stop, 5, "bytes")
                     await self.broadcast({"type": "top_talkers_update", "data": talkers})
+
+                    # Get protocol distribution (the frontend listens for this)
+                    protocols = await deps.storage.get_protocol_distribution(start, stop)
+                    await self.broadcast({"type": "protocols_update", "data": protocols})
             except Exception as e:
                 logger.warning("broadcast_error", error=str(e))
 
