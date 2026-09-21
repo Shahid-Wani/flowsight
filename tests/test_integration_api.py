@@ -326,15 +326,12 @@ def test_alert_persistence_round_trip_via_api(api_storage):
     )
     asyncio.run(api_storage.write_flows([]))  # ensure connected
 
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(
-            api_storage.write_api.write(
-                bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)]
-            )
-        )
-    finally:
-        loop.close()
+    # Batching write_api.write() queues the point (sync, fire-and-forget);
+    # the flush + poll below waits until it is queryable.
+    api_storage.write_api.write(
+        bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)]
+    )
+    asyncio.run(api_storage.flush())
 
     # Poll until the alert is readable through the API route
     client = make_client()
