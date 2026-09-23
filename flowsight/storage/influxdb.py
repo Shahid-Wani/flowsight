@@ -403,6 +403,32 @@ class InfluxDBStorage(StorageBackend):
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self.write_api.flush)
 
+    async def read_alert_cooldowns(self) -> dict[str, datetime]:
+        """Read the last-fired time per rule from persisted alerts.
+
+        Used to hydrate cooldown state on startup: without it, a
+        restarted collector would re-fire alerts for conditions that
+        already alerted before the restart.
+        """
+        if not self._connected:
+            await self.connect()
+
+        query = f"""
+        from(bucket: "{settings.storage.bucket}")
+          |> range(start: -7d, stop: now())
+          |> filter(fn: (r) => r._measurement == "alert")
+          |> group(columns: ["rule_name"])
+          |> last()
+        """
+
+        try:
+            loop = asyncio.get_running_loop()
+            rows = await loop.run_in_executor(None, self._query_flux, query)
+        except Exception as e:
+            logger.exception("read_alert_cooldowns_failed", error=str(e))
+            raise
+        return _cooldowns_from_alert_rows(rows)
+
     async def write_alert(self, alert: Alert) -> None:
         """Persist an alert (measurement ``alert``).
 
@@ -579,6 +605,25 @@ def _enrich_talkers(
             row["packets"] = int(packets)
         enriched.append(row)
     return enriched
+
+
+def _cooldowns_from_alert_rows(rows: list[dict[str, Any]]) -> dict[str, datetime]:
+    """Fold alert rows into per-rule last-alert times.
+
+    The persisted alerts ARE the cooldown record (the pipeline writes
+    every generated alert): the latest alert timestamp per rule is the
+    moment that rule last fired.
+    """
+    cooldowns: dict[str, datetime] = {}
+    for row in rows:
+        rule = row.get("rule_name")
+        alert_time = row.get("_time")
+        if not rule or not hasattr(alert_time, "tzinfo"):
+            continue
+        current = cooldowns.get(rule)
+        if current is None or alert_time > current:
+            cooldowns[rule] = alert_time
+    return cooldowns
 
 
 def alert_to_point(alert: Alert) -> Point:

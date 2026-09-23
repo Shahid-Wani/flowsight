@@ -74,6 +74,24 @@ class Pipeline:
             storage=storage, alert_manager=alert_manager, enrichment_manager=enrichment_manager
         )
 
+    async def start(self) -> None:
+        """Prepare the pipeline after construction (hydrate cooldown state).
+
+        Cooldown state is hydrated from persisted alerts: without it, a
+        restarted collector would re-fire alerts for conditions that
+        already alerted before the restart. Failure-isolated - the
+        pipeline starts with cold cooldowns instead of failing.
+        """
+        if self.storage is None or self.alert_manager is None:
+            return
+        try:
+            cooldowns = await self.storage.read_alert_cooldowns()
+            if cooldowns:
+                self.alert_manager.engine._last_alert_time.update(cooldowns)
+                logger.info("pipeline_cooldowns_hydrated", rules=len(cooldowns))
+        except Exception as e:
+            logger.warning("pipeline_cooldown_hydration_failed", error=str(e))
+
     async def stop(self) -> None:
         """Release pipeline resources."""
         if self.enrichment_manager is not None:

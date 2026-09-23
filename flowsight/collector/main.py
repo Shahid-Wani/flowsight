@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 async def lifespan(collector: FlowCollector, pipeline: Pipeline):
     """Application lifespan manager."""
     logger.info("starting_flow_collector", listen=settings.collector.listen)
+    await pipeline.start()
     await collector.start()
     try:
         yield
