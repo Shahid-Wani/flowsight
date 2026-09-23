@@ -412,7 +412,10 @@ def test_websocket_broadcasts_new_persisted_alerts(api_storage):
             severity="warning",
             message="real-time broadcast round trip",
             flow_data={"src_ip": "10.3.9.9", "bytes": 999},
-            timestamp=datetime.now(tz=timezone.utc) - timedelta(seconds=1),
+            # Must be AFTER the loop's last-seen mark (set at connect):
+            # the strict filter only broadcasts alerts newer than it,
+            # which is exactly the production semantic.
+            timestamp=datetime.now(tz=timezone.utc),
         )
         api_storage.write_api.write(
             bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)]
