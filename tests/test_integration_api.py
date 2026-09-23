@@ -397,7 +397,7 @@ def test_websocket_broadcasts_new_persisted_alerts(api_storage):
     process's shape of alert generation) -> the loop reads alerts since
     its last-seen mark -> broadcasts to connected clients.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     from flowsight.alerting.threshold import Alert
     from flowsight.storage.influxdb import alert_to_point
