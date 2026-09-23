@@ -371,3 +371,64 @@ def test_alert_persistence_round_trip_via_api(api_storage):
     assert acked is not None, "ack state never became visible via the API"
     assert acked["acknowledged"] is True
     assert acked["acknowledged_by"] == "ci-bot"
+
+
+def test_websocket_broadcasts_reach_clients(api_storage):
+    """The broadcast loop must push stat updates to connected clients.
+
+    With real storage wired (the fixture instance is connected), the
+    loop broadcasts bandwidth/talkers/protocols updates every 5s. This
+    is the first test to exercise the WebSocket path end-to-end.
+    """
+    client = make_client()
+    with client.websocket_connect("/api/v1/ws/live") as ws:
+        first = ws.receive_json()
+        assert first["type"] == "connected"
+
+        # The loop broadcasts every 5s; one of the stat types must arrive
+        msg = ws.receive_json()
+        assert msg["type"] in ("bandwidth_update", "top_talkers_update", "protocols_update")
+
+
+def test_websocket_broadcasts_new_persisted_alerts(api_storage):
+    """A newly persisted alert must be pushed as {"type": "alert"}.
+
+    End-to-end version of the Day 8 broadcast: write_alert (another
+    process's shape of alert generation) -> the loop reads alerts since
+    its last-seen mark -> broadcasts to connected clients.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from flowsight.alerting.threshold import Alert
+    from flowsight.storage.influxdb import alert_to_point
+
+    client = make_client()
+    with client.websocket_connect("/api/v1/ws/live") as ws:
+        first = ws.receive_json()
+        assert first["type"] == "connected"
+
+        alert = Alert(
+            rule_name="ws_broadcast_rule",
+            severity="warning",
+            message="real-time broadcast round trip",
+            flow_data={"src_ip": "10.3.9.9", "bytes": 999},
+            timestamp=datetime.now(tz=timezone.utc) - timedelta(seconds=1),
+        )
+        api_storage.write_api.write(
+            bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)]
+        )
+        asyncio.run(api_storage.flush())
+
+        # Read messages until the alert arrives (a tick is <= 5s; allow 3)
+        seen = []
+        for _ in range(6):
+            msg = ws.receive_json()
+            seen.append(msg["type"])
+            if msg["type"] == "alert":
+                break
+        assert "alert" in seen, f"alert never broadcast; got {seen}"
+
+        alert_msg = next(m for m in [msg] if m["type"] == "alert")
+        assert alert_msg["data"]["id"] == alert.id
+        assert alert_msg["data"]["rule_name"] == "ws_broadcast_rule"
+        assert alert_msg["data"]["flow_data"]["bytes"] == 999
