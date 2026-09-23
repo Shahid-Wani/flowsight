@@ -40,7 +40,10 @@ export function Alerts() {
       try {
         const message: WSMessage = JSON.parse(lastMessage.data)
         if (message.type === 'alert' && message.data) {
-          setAlerts(prev => [message.data, ...prev.slice(0, 99)]) // Keep last 100
+          // Dedupe by id: a broadcast may also arrive via the poll fetch
+          setAlerts(prev =>
+            prev.some(a => a.id === message.data.id) ? prev : [message.data, ...prev.slice(0, 99)]
+          )
         }
       } catch (e) {
         console.error('Failed to parse WS message:', e)

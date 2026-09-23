@@ -6,6 +6,7 @@ Real-time WebSocket endpoints for live flow updates.
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -27,6 +28,16 @@ def _recent_window(seconds: int) -> tuple[str, str]:
     rejected by the storage layer's ``normalize_time_range``.
     """
     return f"-{seconds}s", "now()"
+
+
+def _new_alerts_since(alert_rows: list[dict[str, Any]], last_seen: str) -> list[dict[str, Any]]:
+    """Filter alert rows to those strictly newer than ``last_seen``.
+
+    Strict comparison (no ``>=``) keeps each alert broadcasting exactly
+    once: a re-read alert whose timestamp equals the last-seen mark is
+    skipped instead of re-sent every tick.
+    """
+    return [row for row in alert_rows if row.get("timestamp") and row["timestamp"] > last_seen]
 
 
 class ConnectionManager:
@@ -68,7 +79,8 @@ class ConnectionManager:
             self.disconnect(conn)
 
     async def _broadcast_loop(self):
-        """Periodically broadcast latest stats."""
+        """Periodically broadcast latest stats and new alerts."""
+        last_seen = datetime.now(timezone.utc).isoformat()
         while self.active_connections:
             try:
                 if deps.storage and deps.storage._connected:
@@ -86,6 +98,17 @@ class ConnectionManager:
                     # Get protocol distribution (the frontend listens for this)
                     protocols = await deps.storage.get_protocol_distribution(start, stop)
                     await self.broadcast({"type": "protocols_update", "data": protocols})
+
+                    # Broadcast alerts persisted since the last tick (the
+                    # frontend Alerts page listens for this type). Alerts
+                    # are timestamped at generation in other processes; the
+                    # strict filter keeps each one broadcasting once.
+                    alert_rows = await deps.storage.read_alerts(last_seen, "now()", limit=50)
+                    new_alerts = _new_alerts_since(alert_rows, last_seen)
+                    for alert in new_alerts:
+                        await self.broadcast({"type": "alert", "data": alert})
+                    if new_alerts:
+                        last_seen = max(a["timestamp"] for a in new_alerts)
             except Exception as e:
                 logger.warning("broadcast_error", error=str(e))
 
