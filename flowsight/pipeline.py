@@ -9,6 +9,7 @@ alive.
 from typing import Any
 
 from flowsight import get_logger, settings
+from flowsight.detection.ml import ml_result_to_alert
 from flowsight.detection.statistical import StatisticalAnomalyDetector
 from flowsight.storage.influxdb import InfluxDBStorage
 
@@ -30,11 +31,13 @@ class Pipeline:
         alert_manager: Any | None = None,
         enrichment_manager: Any | None = None,
         detector: StatisticalAnomalyDetector | None = None,
+        ml_detector: Any | None = None,
     ):
         self.storage = storage
         self.alert_manager = alert_manager
         self.enrichment_manager = enrichment_manager
         self.detector = detector or self._default_detector()
+        self.ml_detector = ml_detector
         self.flows_processed = 0
 
     @staticmethod
@@ -54,6 +57,7 @@ class Pipeline:
         here are visible to the API.
         """
         from flowsight.alerting.manager import get_alert_manager
+        from flowsight.detection.ml import create_default_ml_detector
         from flowsight.enrichment.manager import get_enrichment_manager
 
         storage: InfluxDBStorage | None = InfluxDBStorage()
@@ -70,8 +74,13 @@ class Pipeline:
         if settings.enrichment.enabled:
             enrichment_manager = await get_enrichment_manager()
 
+        ml_detector = create_default_ml_detector()
+
         return cls(
-            storage=storage, alert_manager=alert_manager, enrichment_manager=enrichment_manager
+            storage=storage,
+            alert_manager=alert_manager,
+            enrichment_manager=enrichment_manager,
+            ml_detector=ml_detector,
         )
 
     async def start(self) -> None:
@@ -113,6 +122,7 @@ class Pipeline:
         flows = await self._enrich(flows)
         await self._store(flows)
         await self._detect(flows)
+        await self._ml_detect(flows)
         await self._alert(flows)
 
         self.flows_processed += len(flows)
@@ -152,6 +162,30 @@ class Pipeline:
                 )
         except Exception as e:
             logger.exception("pipeline_detection_failed", error=str(e))
+
+    async def _ml_detect(self, flows: list[dict[str, Any]]) -> None:
+        """Run ML anomaly detection when enabled; anomalies become alerts.
+
+        The detector loads its trained model from ``model_path`` at
+        construction (trained offline via ``flowsight-train``); when no
+        model exists it reports nothing rather than failing.
+        """
+        if not settings.detection.ml.enabled or self.ml_detector is None:
+            return
+        try:
+            results = await self.ml_detector.detect_batch(flows)
+            anomalies = [r for r in results if r is not None and r.is_anomaly]
+            if not anomalies:
+                return
+            logger.warning(
+                "pipeline_ml_anomalies_detected", count=len(anomalies), flow_count=len(flows)
+            )
+            alerts = [ml_result_to_alert(result) for result in anomalies]
+            for alert in alerts:
+                await self.alert_manager.dispatch_alert(alert)
+            await self._persist_alerts(alerts)
+        except Exception as e:
+            logger.exception("pipeline_ml_detection_failed", error=str(e))
 
     async def _alert(self, flows: list[dict[str, Any]]) -> None:
         """Evaluate threshold rules, dispatch alerts, and persist them."""

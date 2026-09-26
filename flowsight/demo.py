@@ -28,6 +28,7 @@ def generate_flows(count: int, seed: int = 42) -> list[dict[str, object]]:
                 "src_port": generator.randint(32768, 60999),
                 "dst_port": destination_port,
                 "protocol": protocol,
+                "duration": generator.randint(10, 3_600_000),
                 "packets": generator.randint(1, 100),
                 "bytes": generator.randint(512, 10_000_000),
             }

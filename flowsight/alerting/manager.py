@@ -80,6 +80,16 @@ class AlertManager:
         """Evaluate a flow and dispatch alerts."""
         return await self.engine.evaluate_flow_async(flow)
 
+    async def dispatch_alert(self, alert: Alert) -> None:
+        """Dispatch a pre-built alert to handlers and record it in history.
+
+        Used for alerts that don't originate from threshold rules
+        (e.g. ML anomalies); goes through the same handler dispatch as
+        threshold alerts.
+        """
+        self.engine._alert_history.append(alert)
+        await self.engine._dispatch_alert(alert)
+
     async def evaluate_batch(self, flows: list[dict[str, Any]]) -> list[Alert]:
         """Evaluate a batch of flows."""
         all_alerts = []

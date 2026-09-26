@@ -15,6 +15,7 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
 from flowsight import get_logger
+from flowsight.alerting.threshold import Alert, AlertSeverity
 from flowsight.config import settings
 
 logger = get_logger(__name__)
@@ -214,7 +215,7 @@ class MLAnomalyDetector:
             prediction = self.model.predict(features_scaled)[0]  # -1 = anomaly, 1 = normal
             score = self.model.score_samples(features_scaled)[0]  # Lower = more anomalous
 
-            is_anomaly = prediction == -1
+            is_anomaly = bool(prediction == -1)
 
             result = MLDetectionResult(
                 is_anomaly=is_anomaly,
@@ -271,7 +272,7 @@ class MLAnomalyDetector:
             results = [None] * len(flows)
             for idx, (pred, score) in enumerate(zip(predictions, scores, strict=False)):
                 flow_idx = valid_indices[idx]
-                is_anomaly = pred == -1
+                is_anomaly = bool(pred == -1)
 
                 features_dict = {
                     field: float(x[idx, i]) for i, field in enumerate(self.feature_fields)
@@ -325,3 +326,22 @@ def create_default_ml_detector() -> MLAnomalyDetector | None:
         return None
 
     return MLAnomalyDetector(model_path=settings.detection.ml.model_path, contamination=0.01)
+
+
+def ml_result_to_alert(result: MLDetectionResult) -> Alert:
+    """Convert an ML anomaly result into a persisted, dispatchable alert.
+
+    The alert flows through the same persistence + WS broadcast path as
+    threshold alerts; severity comes from the ``ml_severity`` config.
+    """
+    from flowsight import settings
+
+    return Alert(
+        rule_name="ml_anomaly",
+        severity=AlertSeverity(settings.detection.ml.ml_severity),
+        message=(
+            f"ML anomaly detected (score: {result.score:.3f}, "
+            f"threshold: {result.threshold}): {result.features}"
+        ),
+        flow_data={**result.features, "timestamp": result.timestamp.isoformat()},
+    )

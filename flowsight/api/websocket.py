@@ -90,6 +90,12 @@ class ConnectionManager:
                     if series:
                         latest = series[-1]
                         await self.broadcast({"type": "bandwidth_update", "data": latest})
+                    else:
+                        # Empty window: broadcast a zero point so the chart
+                        # flatlines instead of freezing on stale data.
+                        await self.broadcast(
+                            {"type": "bandwidth_update", "data": {"time": stop, "bytes": 0}}
+                        )
 
                     # Get top talkers
                     talkers = await deps.storage.get_top_talkers(start, stop, 5, "bytes")

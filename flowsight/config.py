@@ -85,6 +85,7 @@ class MLDetectionConfig(BaseSettings):
     enabled: bool = False
     model_path: str = "./models/isolation_forest.pkl"
     retrain_interval: str = "24h"
+    ml_severity: Literal["info", "warning", "critical"] = "warning"
 
 
 class DetectionConfig(BaseSettings):
