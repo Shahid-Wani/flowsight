@@ -330,7 +330,8 @@ def test_alert_persistence_round_trip_via_api(api_storage):
     # The batching write_api + flush() is a race (flush signals the
     # background thread; the POST may land after the next tick), which
     # made this test flaky.
-    from influxdb_client import SYNCHRONOUS, InfluxDBClient
+    from influxdb_client import InfluxDBClient
+    from influxdb_client.client.write_api import SYNCHRONOUS
 
     with InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as sync_client:
         writer = sync_client.write_api(write_options=SYNCHRONOUS)
@@ -421,10 +422,15 @@ def test_websocket_broadcasts_new_persisted_alerts(api_storage):
             # which is exactly the production semantic.
             timestamp=datetime.now(tz=timezone.utc),
         )
-        api_storage.write_api.write(
-            bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)]
-        )
-        asyncio.run(api_storage.flush())
+        # SYNCHRONOUS write (see test_alert_persistence_round_trip_via_api):
+        # the batching api + flush() is a timing race against the 5s tick.
+        from influxdb_client import InfluxDBClient
+        from influxdb_client.client.write_api import SYNCHRONOUS
+
+        with InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as sync_client:
+            writer = sync_client.write_api(write_options=SYNCHRONOUS)
+            writer.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)])
+            writer.close()
 
         # Read messages until the alert arrives (a tick is <= 5s; allow 3)
         seen = []
