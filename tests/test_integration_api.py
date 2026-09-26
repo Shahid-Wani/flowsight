@@ -326,12 +326,16 @@ def test_alert_persistence_round_trip_via_api(api_storage):
     )
     asyncio.run(api_storage.write_flows([]))  # ensure connected
 
-    # Batching write_api.write() queues the point (sync, fire-and-forget);
-    # the flush + poll below waits until it is queryable.
-    api_storage.write_api.write(
-        bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)]
-    )
-    asyncio.run(api_storage.flush())
+    # SYNCHRONOUS write: the HTTP POST completes before write() returns.
+    # The batching write_api + flush() is a race (flush signals the
+    # background thread; the POST may land after the next tick), which
+    # made this test flaky.
+    from influxdb_client import SYNCHRONOUS, InfluxDBClient
+
+    with InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG) as sync_client:
+        writer = sync_client.write_api(write_options=SYNCHRONOUS)
+        writer.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=[alert_to_point(alert)])
+        writer.close()
 
     # Poll until the alert is readable through the API route
     client = make_client()
