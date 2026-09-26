@@ -24,6 +24,7 @@ def test_generate_flows_has_expected_shape() -> None:
         "src_port",
         "dst_port",
         "protocol",
+        "duration",
         "packets",
         "bytes",
     }

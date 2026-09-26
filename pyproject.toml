@@ -59,6 +59,7 @@ flowsight-collector = "flowsight.collector.main:main"
 flowsight-api = "flowsight.api.main:main"
 flowsight-enrich = "flowsight.enrichment.cli:main"
 flowsight-detect = "flowsight.detection.cli:main"
+flowsight-train = "flowsight.detection.cli:train"
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
