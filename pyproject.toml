@@ -1,6 +1,6 @@
 [project]
 name = "flowsight"
-version = "0.2.0"
+version = "0.3.0"
 description = "NetFlow/sFlow/IPFIX Analyzer for bandwidth visibility & threat hunting"
 readme = "README.md"
 license = {text = "MIT"}
